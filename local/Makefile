@@ -6,7 +6,6 @@ help: ## Показать список доступных команд
 	@echo "  make cluster-down   - Удалить Kind-кластер"
 	@echo "  make cluster-status - Проверить статус нод кластера"
 	@echo "  make ingress-up    - Установить NGINX Ingress Controller"
-	@echo "  make argocd-up     - Развернуть ArgoCD в кластере"
 	@echo "  make dev-gui        - Запустить Kubernetes Dashboard & ArgoCD UI"
 	@echo "  make all-up         - Полный цикл: кластер -> ingress -> argocd -> UI"
 
@@ -29,24 +28,9 @@ ingress-up: ## Установить NGINX Ingress Controller
 	  --selector=app.kubernetes.io/component=controller \
 	  --timeout=90s
 
-argocd-up: ## Установить ArgoCD
-	@echo "🐙 Разворачивание ArgoCD (Server-Side Apply)..."
-	kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-	kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-	@echo "⏳ Ожидание готовности подов ArgoCD..."
-	@kubectl wait --namespace argocd \
-		--for=condition=ready pod \
-		--all \
-		--timeout=120s
-	@echo "=================================================="
-	@echo "✅ ArgoCD успешно развернут!"
-	@echo "🔑 Пароль администратора (пользователь 'admin'):"
-	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo ""
-	@echo "=================================================="
-
 dev-gui: ## Запустить скрипт дашбордов и проброса портов
 	@echo "📊 Запуск UI & Дашбордов..."
 	./dev-dashboard.sh
 
-all-up: cluster-up ingress-up argocd-up dev-gui ## Поднять всю инфраструктуру с нуля
+all-up: cluster-up ingress-up dev-gui ## Поднять всю инфраструктуру с нуля
 	@echo "🎉 Вся инфраструктура MediaPulse успешно развернута и готова к работе!"
