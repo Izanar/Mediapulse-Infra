@@ -9,7 +9,7 @@ help: ## Показать список доступных команд
 	@echo "  make argocd-up    - Установить ArgoCD"
 	@echo "  make ingress-up    - Установить NGINX Ingress Controller"
 	@echo "  make dev-gui        - Запустить Kubernetes Dashboard & ArgoCD UI"
-	@echo "  make all-up         - Полный цикл: кластер -> ingress -> UI"
+	@echo "  make all-up         - Полный цикл: кластер -> helm -> argocd -> ingress -> UI"
 
 cluster-up: ## Создать Kind-кластер по конфигу kind-config.yaml
 	@echo "🚀 Запуск Kind-кластера mediapulse-cluster..."
