@@ -1,0 +1,83 @@
+MediaPulse License — личное использование и разделение доходов
+(Mediapulse Personal-Use & Profit-Sharing License, версия MPPL-1.0)
+
+Copyright (c) 2026 Izanar — https://github.com/Izanar
+
+Настоящая Лицензия применяется ко всему программному обеспечению платформы
+MediaPulse (далее — «Программа»): исходному коду, конфигурациям, Helm-чартам,
+скриптам и документации в репозиториях проекта MediaPulse.
+
+1. ЛИЧНОЕ ИСПОЛЬЗОВАНИЕ — СВОБОДНО
+
+Любое физическое или юридическое лицо вправе бесплатно использовать, изучать,
+копировать, изменять и распространять Программу для личных некоммерческих
+целей: обучения, хобби, домашней лаборатории, научных и любительских проектов.
+Разрешение автора для этого не требуется. Единственное условие — сохранять
+уведомления об авторских правах и текст настоящей Лицензии.
+
+2. КОММЕРЧЕСКОЕ ИСПОЛЬЗОВАНИЕ — ТОЛЬКО ПО СОГЛАШЕНИЮ С АВТОРОМ
+
+Коммерческим считается любое использование Программы, прямо или косвенно
+приносящее доход, прибыль или иное коммерческое преимущество, в том числе:
+  • продажа Программы либо предоставление её как услуги (SaaS, API, хостинг);
+  • включение Программы или её частей в платный продукт;
+  • использование Программы компанией или предпринимателем для извлечения
+    прибыли;
+  • любая иная монетизация Программы.
+
+Для такого использования необходимо одно из двух:
+  а) письменное соглашение с автором о разделении доходов (прибыли), где доля
+     определяется по взаимной договорённости; или
+  б) отдельное письменное разрешение автора на иных условиях.
+
+Связаться с автором: https://github.com/Izanar
+Молчание или отсутствие ответа не является согласием.
+
+3. РАСПРОСТРАНЕНИЕ
+
+При распространении Программы (в том числе в модифицированном виде)
+сохраняйте настоящую Лицензию и уведомления об авторских правах. Изменённые
+копии должны быть явно обозначены как изменённые. Программа не может
+распространяться на условиях, более строгих, чем настоящая Лицензия.
+
+4. ПРОГРАММА ПРЕДОСТАВЛЯЕТСЯ «КАК ЕСТЬ»
+
+Без каких-либо гарантий, явных или подразумеваемых, включая гарантии
+товарности, пригодности для конкретной цели и отсутствия нарушений прав
+третьих лиц. Автор не несёт ответственности за убытки, упущенную выгоду
+и иной ущерб, возникшие в результате использования или невозможности
+использования Программы.
+
+5. ПРОЧЕЕ
+
+Настоящая Лицензия вступает в силу с момента получения Программы и действует
+бессрочно. Если отдельное письменное соглашение с автором противоречит
+настоящей Лицензии, приоритет имеет соглашение.
+
+────────────────────────────────────────────────────────────────
+
+English translation (informative)
+
+MediaPulse License — Personal Use & Profit-Sharing (MPPL-1.0)
+Copyright (c) 2026 Izanar — https://github.com/Izanar
+
+1. Personal use — free. Anyone may use, study, copy, modify and distribute
+   the Program for personal, non-commercial purposes (education, hobby, home
+   lab, research) free of charge. Keep copyright notices and this License
+   when redistributing.
+2. Commercial use — only by agreement with the author. Any use that directly
+   or indirectly generates income or commercial advantage (sale, SaaS/API/
+   hosting, inclusion in a paid product, use by businesses to derive profit,
+   other monetization) requires either (a) a written profit-sharing agreement
+   with the author (share by mutual negotiation), or (b) a separate written
+   permission from the author. Contact: https://github.com/Izanar — silence
+   is not consent.
+3. Redistribution: keep this License and copyright notices; mark modified
+   copies; do not apply stricter terms than this License.
+4. The Program is provided "AS IS", without any warranties; the author is
+   not liable for any damages arising from the use of the Program.
+5. This License is effective upon receipt of the Program and applies
+   perpetually. A separate written agreement with the author prevails.
+
+In case of conflict between the Russian and English versions, the Russian
+text prevails.
