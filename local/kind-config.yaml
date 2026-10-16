@@ -4,6 +4,7 @@ name: mediapulse-cluster
 nodes:
   # Control Plane (Master-нода)
   - role: control-plane
+    image: kindest/node:v1.30.2
     kubeadmConfigPatches:
       - |
         kind: InitConfiguration
@@ -20,5 +21,8 @@ nodes:
 
   # Worker-ноды
   - role: worker
+    image: kindest/node:v1.30.2
   - role: worker
+    image: kindest/node:v1.30.2
   - role: worker
+    image: kindest/node:v1.30.2
