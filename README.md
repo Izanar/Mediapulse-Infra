@@ -3,7 +3,7 @@
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.30+-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![Kind](https://img.shields.io/badge/Kind-Local%20Cluster-000000?logo=docker&logoColor=white)](https://kind.sigs.k8s.io/)
 [![ArgoCD](https://img.shields.io/badge/ArgoCD-GitOps-EF7B4D?logo=argo&logoColor=white)](https://argoproj.github.io/)
-[![NGINX Ingress](https://img.shields.io/badge/NGINX-Ingress-009639?logo=nginx&logoColor=white)](https://kubernetes.github.io/ingress-nginx/)
+[![Traefik](https://img.shields.io/badge/Traefik-Ingress%20Controller-24A1C1?logo=traefikproxy&logoColor=white)](https://doc.traefik.io/traefik/)
 
 Инфраструктурный репозиторий проекта **MediaPulse**. Содержит конфигурации кластера Kubernetes (Kind), сетевые манифесты, настройки Ingress и средства автоматизации развертывания (GitOps / ArgoCD).
 
@@ -17,7 +17,7 @@
 make all-up
 Эта команда автоматически:
 1. Создаст локальный мульти-нодовый кластер Kind (1 Control-Plane + 3 Worker ноды).
-2. Развернет NGINX Ingress Controller.
+2. Развернет Traefik Ingress Controller.
 3. Установит ArgoCD в отдельный namespace.
 4. Запустит дашборды и пробросит порты.
 
@@ -35,7 +35,7 @@ make cluster-status
 Вывести статус нод кластера (kubectl get nodes)
 
 make ingress-up
-Установить NGINX Ingress Controller
+Установить Traefik Ingress Controller
 
 make argocd-up
 Установить ArgoCD через Helm (идемпотентно). Единственная точка установки ArgoCD —
@@ -54,7 +54,7 @@ ArgoCD UI: https://argocd.local
 Kubernetes Dashboard: https://dashboard.local
 Токен: Автоматически копируется в буфер обмена (или выводится в терминал скриптом).
 > [!NOTE]
-> Оба адреса работают через NGINX Ingress Controller, который пробрасывает
+> Оба адреса работают через Traefik Ingress Controller, который пробрасывает
 > порты 80/443 из Kind-ноды на хост (см. `extraPortMappings` в `kind-config.yaml`).
 > Убедитесь, что в `/etc/hosts` (Windows: `C:\Windows\System32\drivers\etc\hosts`)
 > есть строка:
@@ -62,7 +62,7 @@ Kubernetes Dashboard: https://dashboard.local
 > 127.0.0.1 argocd.local dashboard.local
 > ```
 > Своего TLS-сертификата нет намеренно: секции `tls` в манифестах нет, поэтому
-> ingress-nginx отдаёт свой дефолтный самоподписанный сертификат, и браузер при
+> Traefik отдаёт свой дефолтный самоподписанный сертификат, и браузер при
 > первом заходе покажет предупреждение — его нужно принять один раз. Так в
 > кластере и репозитории не появляется секрет с приватным ключом. Когда появится
 > домен или cert-manager, достаточно добавить секцию `tls` в `argocd-ingress.yaml`.
