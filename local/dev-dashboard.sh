@@ -21,9 +21,10 @@ done
 # 3. Применение локальных Ingress манифестов из папки routes
 echo "🌐 Применение Ingress маршрутизации..."
 kubectl apply -f "$MANIFESTS_DIR/argocd-ingress.yaml"
-kubectl apply -f "$MANIFESTS_DIR/k8s-dashboard-ingress.yaml"
 kubectl apply -f "$MANIFESTS_DIR/mediapulse-ingress.yaml"
 kubectl apply -f "$MANIFESTS_DIR/traefik-ingress.yaml"
+# k8s-dashboard-ingress.yaml пропущен — K8s Dashboard не установлен через этот скрипт.
+# При необходимости добавьте ArgoCD Application для kubernetes-dashboard в Mediapulse-Gitops.
 
 # 4. Ждем, пока Traefik получит внешний IP от MetalLB
 echo "⏳ Ожидание внешнего IP у сервиса Traefik (MetalLB)..."
@@ -108,7 +109,7 @@ echo "• ArgoCD пароль (admin): $ARGOCD_PWD"
 echo "------------------------------------------------------------------------"
 
 echo "================================================================"
-echo "🎉 ОКРУЖЕНИЕ ГОТОВО —剩余шаги для доступа из Windows браузера:"
+echo "🎉 ОКРУЖЕНИЕ ГОТОВО — шаги для доступа из Windows браузера:"
 echo "================================================================"
 echo ""
 echo "1️⃣  В файле C:\\Windows\\System32\\drivers\\etc\\hosts"
