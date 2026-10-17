@@ -8,35 +8,7 @@ TRAEFIK_HOST="traefik.local"
 
 echo "🚀 Настройка локальных дашбордов и Ingress-маршрутов..."
 
-# 1. Установка Kubernetes Dashboard и прав доступа
-if ! kubectl get ns kubernetes-dashboard &>/dev/null; then
-    echo "📦 Установка Kubernetes Dashboard..."
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
-
-    echo "🔐 Настройка сервисного аккаунта администратора..."
-    kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: admin-user
-  namespace: kubernetes-dashboard
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: admin-user
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: admin-user
-  namespace: kubernetes-dashboard
-EOF
-fi
-
-# 2. # Ждем, пока ArgoCD установит Traefik и появятся его CRD
+# 1. Ждем, пока ArgoCD установит Traefik и появятся его CRD
 echo "⏳ Ожидание установки Traefik и его CRD в кластере..."
 for _ in $(seq 1 60); do
     if kubectl get crd ingressroutes.traefik.io &>/dev/null; then
@@ -133,8 +105,6 @@ echo "------------------------------------------------------------------------"
 ARGOCD_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d 2>/dev/null || echo "Секрет создается")
 echo "• ArgoCD пароль (admin): $ARGOCD_PWD"
 
-TOKEN=$(kubectl -n kubernetes-dashboard create token admin-user 2>/dev/null || echo "")
-echo "• K8s Dashboard Token:   $TOKEN"
 echo "------------------------------------------------------------------------"
 
 echo "================================================================"
@@ -153,6 +123,6 @@ echo ""
 echo "3️⃣  Откройте в браузере Windows:"
 echo "      https://argocd.local:8443/       (ArgoCD)"
 echo "      https://traefik.local:8443/dashboard/  (Traefik UI)"
-echo "      https://k8s.local:8443/          (K8s Dashboard)"
+echo "      https://k8s.local:8443/          (K8s Dashboard — установите отдельно при необходимости)"
 
 echo "================================================================"
