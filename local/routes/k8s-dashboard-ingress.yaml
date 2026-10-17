@@ -2,7 +2,7 @@ apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: k8s-dashboard-ingress
-  namespace: k8s-dashboard
+  namespace: kubernetes-dashboard
 spec:
   entryPoints:
     - websecure
@@ -19,6 +19,6 @@ apiVersion: traefik.io/v1alpha1
 kind: ServersTransport
 metadata:
   name: k8s-dashboard-transport
-  namespace: k8s-dashboard
+  namespace: kubernetes-dashboard
 spec:
   insecureSkipVerify: true
