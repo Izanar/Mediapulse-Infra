@@ -10,5 +10,5 @@ spec:
     - match: Host(`mediapulse.local`)
       kind: Rule
       services:
-        - name: mediapulse-service
+        - name: mediapulse-api-service
           port: 80
