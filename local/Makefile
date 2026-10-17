@@ -37,7 +37,8 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@echo "📦 Установка ArgoCD..."
 	@command -v helm >/dev/null 2>&1 || { echo "❌ Helm не найден. Выполни: make helm-up"; exit 1; }
 	@kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
-	helm upgrade --install argocd $(ARGOCD_REPO_PATH)/charts/argocd --namespace argocd
+	helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm --version 7.0.0 \
+		--namespace argocd --values $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml
 	
 	@echo "⏳ Ожидание запуска ArgoCD API сервер..."
 	@kubectl -n argocd rollout status deploy/argocd-server --timeout=120s || true
@@ -61,12 +62,10 @@ all-up: cluster-up helm-up argocd-up dashboard-up ## Полный цикл ра�
 	@kubectl -n argocd wait --for=condition=Synced application/metallb --timeout=120s 2>/dev/null || true
 	@kubectl -n argocd wait --for=condition=Synced application/traefik --timeout=120s 2>/dev/null || true
 	@echo ""
-	@echo "📋 Далее для доступа из Windows:"
-	@echo "   1) В C:\\\\Windows\\\\System32\\\\drivers\\\\etc\\\\hosts (от имени администратора):"
-	@echo "      172.19.17.232 argocd.local traefik.local k8s.local mediapulse.local"
-	@echo "      (IP WSL2 — скрипт dev-dashboard.sh напишет актуальный)"
-	@echo ""
-	@echo "   2) В отдельном терминале запустите:"
+	@echo "	@echo "	@echo "📋 Далее для доступа из Windows:"
+	@echo "   1) В C:\\Windows\\System32\\drivers\\etc\\hosts (от имени администратора):"
+	@echo "      127.0.0.1 argocd.local traefik.local k8s.local mediapulse.local"
+	@echo "      Или <WSL2_IP> <домен> для доступа из Windows через WSL2 port-forward."	@echo "   2) В отдельном терминале запустите:"
 	@echo "      make traefik-port-forward"
 	@echo ""
 	@echo "   3) Откройте в браузере: https://argocd.local:8443/"

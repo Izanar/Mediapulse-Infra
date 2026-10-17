@@ -44,36 +44,20 @@ if [ -z "$TRAEFIK_IP" ]; then
     TRAEFIK_IP="127.0.0.1"
 fi
 
-# 4. Автоматически прописать имена в hosts (WSL + Windows)
-echo "📝 Прописываем имена в hosts..."
-HOSTS_LINUX="/etc/hosts"
-HOSTS_WINDOWS="/mnt/c/Windows/System32/drivers/etc/hosts"
-
-# WSL2 IP — адрес, по которому Windows может достучаться до WSL2 (через port-forward — в кластер)
+# 4. Рекомендация по hosts (скрипт НЕ правит hosts автоматически).
+# WSL2 IP — адрес, по которому Windows достучится до WSL2 через port-forward.
+# Для доступа из WSL2 используйте MetalLB IP (внутри видна кластерная сеть),
+# для доступа из Windows — WSL2 IP (Kind-сеть изолирована, нужен port-forward).
 WSL2_IP=$(ip addr show eth0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 || true)
 if [ -z "$WSL2_IP" ]; then
     WSL2_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
 fi
 
-# Для WSL /etc/hosts пишем MetalLB IP — WSL2 внутри видит кластерную сеть
-sudo sed -i "/\b\($ARGOCD_HOST\|$TRAEFIK_HOST\|k8s.local\|mediapulse.local\)\b/d" "$HOSTS_LINUX" 2>/dev/null || true
-echo "$TRAEFIK_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local" | sudo tee -a "$HOSTS_LINUX" > /dev/null
-
-# Для Windows hosts пишем WSL2 IP — Windows до MetalLB IP не дойдёт, нужен port-forward
-if [ -f "$HOSTS_WINDOWS" ]; then
-    if [ -w "$HOSTS_WINDOWS" ]; then
-        {
-            sed -i "/\b\($ARGOCD_HOST\|$TRAEFIK_HOST\|k8s.local\|mediapulse.local\)\b/d" "$HOSTS_WINDOWS" 2>/dev/null || true
-            echo "$WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local" >> "$HOSTS_WINDOWS" 2>/dev/null || true
-        } 2>/dev/null && echo "✅ Записи добавлены в Windows hosts (IP WSL2: $WSL2_IP)" || echo "⚠️  Не удалось записать в Windows hosts (нет прав доступа)"
-    else
-        echo "⚠️  Нет прав на запись в Windows hosts. Добавьте вручную от имени администратора:"
-        echo "   $WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
-    fi
-else
-    echo "ℹ️  Windows hosts недоступен из WSL. Добавьте вручную в C:\\Windows\\System32\\drivers\\etc\\hosts (от имени администратора):"
-    echo "   $WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
-fi
+echo "RECOMMENDATION: добавьте записи hosts вручную:"
+echo "   WSL2 /etc/hosts:"
+echo "   $TRAEFIK_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
+echo "   Windows C:\\Windows\\System32\\drivers\\etc\\hosts (от имени администратора):"
+echo "   $WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
 
 # 5. Проверка доступности ArgoCD UI
 echo "🔍 Проверка доступности UI..."
@@ -119,7 +103,7 @@ echo ""
 echo "1️⃣  В файле C:\\Windows\\System32\\drivers\\etc\\hosts"
 echo "    (от имени администратора) добавьте строку:"
 echo "      $WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
-echo "    Если скрипт не смог записать Windows hosts автоматически."
+echo "    Скрипт hosts не правит — добавьте строку вручную."
 echo ""
 echo "2️⃣  В отдельном терминале WSL2 запустите port-forward:"
 echo "      kubectl port-forward --address 0.0.0.0 service/traefik 8443:443 -n traefik"
