@@ -18,13 +18,22 @@ for _ in $(seq 1 60); do
     sleep 3
 done
 
+# 1.5. Ждем, пока ArgoCD создаст namespace kubernetes-dashboard (устанавливает Dashboard)
+echo "⏳ Ожидание создания namespace kubernetes-dashboard ArgoCD..."
+for _ in $(seq 1 60); do
+    if kubectl get ns kubernetes-dashboard &>/dev/null; then
+        echo "✅ Namespace kubernetes-dashboard найден!"
+        break
+    fi
+    sleep 3
+done
+
 # 3. Применение локальных Ingress манифестов из папки routes
 echo "🌐 Применение Ingress маршрутизации..."
 kubectl apply -f "$MANIFESTS_DIR/argocd-ingress.yaml"
+kubectl apply -f "$MANIFESTS_DIR/k8s-dashboard-ingress.yaml"
 kubectl apply -f "$MANIFESTS_DIR/mediapulse-ingress.yaml"
 kubectl apply -f "$MANIFESTS_DIR/traefik-ingress.yaml"
-# k8s-dashboard-ingress.yaml пропущен — K8s Dashboard не установлен через этот скрипт.
-# При необходимости добавьте ArgoCD Application для kubernetes-dashboard в Mediapulse-Gitops.
 
 # 4. Ждем, пока Traefik получит внешний IP от MetalLB
 echo "⏳ Ожидание внешнего IP у сервиса Traefik (MetalLB)..."
@@ -106,6 +115,9 @@ echo "------------------------------------------------------------------------"
 ARGOCD_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d 2>/dev/null || echo "Секрет создается")
 echo "• ArgoCD пароль (admin): $ARGOCD_PWD"
 
+DASHBOARD_TOKEN=$(kubectl -n kubernetes-dashboard create token admin-user 2>/dev/null || echo "Создайте вручную: kubectl -n kubernetes-dashboard create token admin-user")
+echo "• K8s Dashboard токен (admin-user): $DASHBOARD_TOKEN"
+
 echo "------------------------------------------------------------------------"
 
 echo "================================================================"
@@ -124,6 +136,6 @@ echo ""
 echo "3️⃣  Откройте в браузере Windows:"
 echo "      https://argocd.local:8443/       (ArgoCD)"
 echo "      https://traefik.local:8443/dashboard/  (Traefik UI)"
-echo "      https://k8s.local:8443/          (K8s Dashboard — установите отдельно при необходимости)"
+echo "      https://k8s.local:8443/          (K8s Dashboard)"
 
 echo "================================================================"
