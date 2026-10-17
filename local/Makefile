@@ -7,7 +7,7 @@ help: ## Показать список доступных команд
 	@echo "  make cluster-status          - Проверить статус нод кластера"
 	@echo "  make helm-up                 - Установить Helm CLI"
 	@echo "  make argocd-up               - Установить ArgoCD и применить root.yaml"
-	@echo "  make metallb-up              - Установить MetalLB (локальный LoadBalancer)"
+	@echo "  make metallb-up              - Установить MetalLB (опционально, обычно через ArgoCD)"
 	@echo "  make dashboard-up            - Запустить скрипт настройки Ingress и дашбордов"
 	@echo "  make traefik-port-forward    - Пробросить порт Traefik для доступа из Windows"
 	@echo "  make all-up                  - Полный цикл: кластер -> helm -> argocd -> дашборды"
@@ -64,12 +64,16 @@ traefik-port-forward: ## Пробросить порт Traefik для досту
 	@echo "🔗 Пробрасываю порт Traefik для доступа из Windows..."
 	kubectl port-forward --address 0.0.0.0 service/traefik 8443:443 -n traefik
 
-all-up: cluster-up helm-up metallb-up argocd-up dashboard-up ## Полный цикл развертывания
-	@echo "🎉 Вся инфраструктура, MetalLB, ArgoCD и локальные дашборды успешно запущены!"
+all-up: cluster-up helm-up argocd-up dashboard-up ## Полный цикл развертывания
+	@echo "🎉 Вся инфраструктура, ArgoCD и локальные дашборды успешно запущены!"
+	@echo ""
+	@echo "⏳ Ожидание синхронизации MetalLB и Traefik через ArgoCD..."
+	@kubectl -n argocd wait --for=condition=Synced application/metallb --timeout=120s 2>/dev/null || true
+	@kubectl -n argocd wait --for=condition=Synced application/traefik --timeout=120s 2>/dev/null || true
 	@echo ""
 	@echo "📋 Далее для доступа из Windows:"
 	@echo "   1) В C:\\\\Windows\\\\System32\\\\drivers\\\\etc\\\\hosts (от имени администратора):"
-	@echo "      172.19.17.232 argocd.local traefik.local k8s.local dashboard.local mediapulse.local"
+	@echo "      172.19.17.232 argocd.local traefik.local k8s.local mediapulse.local"
 	@echo "      (IP WSL2 — скрипт dev-dashboard.sh напишет актуальный)"
 	@echo ""
 	@echo "   2) В отдельном терминале запустите:"
