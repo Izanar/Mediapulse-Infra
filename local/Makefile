@@ -43,7 +43,7 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@kubectl -n argocd rollout status deploy/argocd-server --timeout=120s || true
 	
 	@echo "🔄 Применение корневого манифеста (root.yaml)..."
-	kubectl apply -f ../../Mediapulse-Gitops/argocd/root.yaml
+	kubectl apply -f ../../Mediapulse-Gitops/local/argocd/root.yaml
 
 dashboard-up: ## Запустить скрипт настройки маршрутов и дашбордов
 	@echo "🌐 Запуск скрипта конфигурации окружения..."
