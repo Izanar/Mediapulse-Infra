@@ -167,7 +167,4 @@ echo "      https://argocd.local:8443/       (ArgoCD)"
 echo "      https://traefik.local:8443/dashboard/  (Traefik UI)"
 echo "      https://k8s.local:8443/          (K8s Dashboard)"
 
-echo ""
-echo "   Пароль ArgoCD (admin): $ARGOCD_PWD"
-echo "   Токен K8s Dashboard:   $TOKEN"
 echo "================================================================"
