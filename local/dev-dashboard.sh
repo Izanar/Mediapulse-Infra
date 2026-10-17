@@ -8,42 +8,6 @@ TRAEFIK_HOST="traefik.local"
 
 echo "🚀 Настройка локальных дашбордов и Ingress-маршрутов..."
 
-# 0. Убедиться, что MetalLB установлен (локальный LoadBalancer для Traefik)
-if ! kubectl get ns metallb-system &>/dev/null; then
-    echo "📦 Установка MetalLB..."
-    kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
-    kubectl -n metallb-system rollout status deploy/controller --timeout=120s || true
-    kubectl -n metallb-system rollout status deploy/speaker --timeout=120s || true
-    kubectl apply -f - <<EOF
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: traefik-pool
-  namespace: metallb-system
-spec:
-  addresses:
-    - 172.18.255.10-172.18.255.10
----
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: services-pool
-  namespace: metallb-system
-spec:
-  addresses:
-    - 172.18.255.11-172.18.255.250
----
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: kind-l2
-  namespace: metallb-system
-EOF
-    echo "✅ MetalLB установлен"
-else
-    echo "✅ MetalLB уже установлен"
-fi
-
 # 1. Установка Kubernetes Dashboard и прав доступа
 if ! kubectl get ns kubernetes-dashboard &>/dev/null; then
     echo "📦 Установка Kubernetes Dashboard..."

@@ -1,4 +1,4 @@
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up metallb-up dashboard-up traefik-port-forward all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up dashboard-up traefik-port-forward all-up
 
 help: ## Показать список доступных команд
 	@echo "Доступные команды в mediapulse-infra:"
@@ -7,7 +7,6 @@ help: ## Показать список доступных команд
 	@echo "  make cluster-status          - Проверить статус нод кластера"
 	@echo "  make helm-up                 - Установить Helm CLI"
 	@echo "  make argocd-up               - Установить ArgoCD и применить root.yaml"
-	@echo "  make metallb-up              - Установить MetalLB (опционально, обычно через ArgoCD)"
 	@echo "  make dashboard-up            - Запустить скрипт настройки Ingress и дашбордов"
 	@echo "  make traefik-port-forward    - Пробросить порт Traefik для доступа из Windows"
 	@echo "  make all-up                  - Полный цикл: кластер -> helm -> argocd -> дашборды"
@@ -45,15 +44,6 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	
 	@echo "🔄 Применение корневого манифеста (root.yaml)..."
 	kubectl apply -f ../../Mediapulse-Gitops/argocd/root.yaml
-
-metallb-up: ## Установить MetalLB (локальный LoadBalancer для Kind)
-	@echo "🔄 Установка MetalLB..."
-	@kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
-	@echo "⏳ Ожидание готовности MetalLB..."
-	@kubectl -n metallb-system rollout status deploy/controller --timeout=120s || true
-	@kubectl -n metallb-system rollout status deploy/speaker --timeout=120s || true
-	@kubectl apply -f ./manifests/metallb-pool.yaml
-	@echo "✅ MetalLB установлен и IP-пул настроен"
 
 dashboard-up: ## Запустить скрипт настройки маршрутов и дашбордов
 	@echo "🌐 Запуск скрипта конфигурации окружения..."
