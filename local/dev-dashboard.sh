@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MANIFESTS_DIR="$SCRIPT_DIR/routes"
 ARGOCD_HOST="argocd.local"
 TRAEFIK_HOST="traefik.local"
 
@@ -18,7 +17,7 @@ for _ in $(seq 1 60); do
     sleep 3
 done
 
-# 1.5. Ждем, пока ArgoCD создаст namespace kubernetes-dashboard (устанавливает Dashboard)
+# 2. Ждем, пока ArgoCD создаст namespace kubernetes-dashboard (устанавливает Dashboard)
 echo "⏳ Ожидание создания namespace kubernetes-dashboard ArgoCD..."
 for _ in $(seq 1 60); do
     if kubectl get ns kubernetes-dashboard &>/dev/null; then
@@ -28,14 +27,7 @@ for _ in $(seq 1 60); do
     sleep 3
 done
 
-# 3. Применение локальных Ingress манифестов из папки routes
-echo "🌐 Применение Ingress маршрутизации..."
-kubectl apply -f "$MANIFESTS_DIR/argocd-ingress.yaml"
-kubectl apply -f "$MANIFESTS_DIR/k8s-dashboard-ingress.yaml"
-kubectl apply -f "$MANIFESTS_DIR/mediapulse-ingress.yaml"
-kubectl apply -f "$MANIFESTS_DIR/traefik-ingress.yaml"
-
-# 4. Ждем, пока Traefik получит внешний IP от MetalLB
+# 3. Ждем, пока Traefik получит внешний IP от MetalLB
 echo "⏳ Ожидание внешнего IP у сервиса Traefik (MetalLB)..."
 TRAEFIK_IP=""
 for _ in $(seq 1 60); do
@@ -52,7 +44,7 @@ if [ -z "$TRAEFIK_IP" ]; then
     TRAEFIK_IP="127.0.0.1"
 fi
 
-# 5. Автоматически прописать имена в hosts (WSL + Windows)
+# 4. Автоматически прописать имена в hosts (WSL + Windows)
 echo "📝 Прописываем имена в hosts..."
 HOSTS_LINUX="/etc/hosts"
 HOSTS_WINDOWS="/mnt/c/Windows/System32/drivers/etc/hosts"
@@ -83,7 +75,7 @@ else
     echo "   $WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
 fi
 
-# 6. Проверка доступности ArgoCD UI
+# 5. Проверка доступности ArgoCD UI
 echo "🔍 Проверка доступности UI..."
 RESOLVE_IP="$TRAEFIK_IP"
 if [ "$TRAEFIK_IP" = "127.0.0.1" ]; then
@@ -109,7 +101,7 @@ if [ "$code" != "200" ]; then
     exit 1
 fi
 
-# 7. Вывод учетных данных
+# 6. Вывод учетных данных
 echo "🔑 Данные для доступа:"
 echo "------------------------------------------------------------------------"
 ARGOCD_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d 2>/dev/null || echo "Секрет создается")

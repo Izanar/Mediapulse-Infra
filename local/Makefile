@@ -1,3 +1,5 @@
+ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
+
 .PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up dashboard-up traefik-port-forward all-up
 
 help: ## Показать список доступных команд
@@ -35,9 +37,7 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@echo "📦 Установка ArgoCD..."
 	@command -v helm >/dev/null 2>&1 || { echo "❌ Helm не найден. Выполни: make helm-up"; exit 1; }
 	@kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
-	helm repo add argo https://argoproj.github.io/argo-helm
-	helm repo update
-	helm upgrade --install argocd argo/argo-cd --namespace argocd
+	helm upgrade --install argocd $(ARGOCD_REPO_PATH)/charts/argocd --namespace argocd
 	
 	@echo "⏳ Ожидание запуска ArgoCD API сервер..."
 	@kubectl -n argocd rollout status deploy/argocd-server --timeout=120s || true
