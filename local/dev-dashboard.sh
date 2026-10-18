@@ -34,27 +34,12 @@ for _ in $(seq 1 60); do
     TRAEFIK_IP=$(kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 done
 
-if [ -z "$TRAEFIK_IP" ]; then
-    echo "⚠️  Traefik не получил внешний IP от MetalLB. Для доступа используйте port-forward."
-fi
-
-# 4. Рекомендация по hosts (скрипт НЕ правит hosts автоматически).
-# При доступе через port-forward WSL2 использует localhost, Windows — IP WSL2.
 WSL2_IP=$(ip -4 -o addr show dev eth0 2>/dev/null | awk '{split($4, address, "/"); print address[1]}' || true)
 if [ -z "$WSL2_IP" ]; then
     WSL2_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
 fi
 
-echo "RECOMMENDATION: добавьте записи hosts вручную:"
-echo "   WSL2 /etc/hosts:"
-echo "   127.0.0.1 $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
-echo "   Windows C:\\Windows\\System32\\drivers\\etc\\hosts (от имени администратора):"
-echo "   $WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
-if [ -n "$TRAEFIK_IP" ]; then
-    echo "   MetalLB IP Traefik (для прямого доступа, если маршрут доступен): $TRAEFIK_IP"
-fi
-
-# 5. Вывод учетных данных
+# 4. Вывод учетных данных
 echo "🔑 Данные для доступа:"
 echo "------------------------------------------------------------------------"
 ARGOCD_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
