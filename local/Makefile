@@ -1,7 +1,7 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up wait-application dashboard-up traefik-https-proxy traefik-port-forward all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up wait-application dashboard-up local-ca-up certificates-up traefik-https-proxy traefik-port-forward all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -12,6 +12,7 @@ help: ## Показать список доступных команд
 	@echo "  make helm-up                 - Установить Helm CLI"
 	@echo "  make argocd-up               - Установить Argo CD и последовательно приложения"
 	@echo "  make dashboard-up            - Проверить маршруты и вывести данные доступа"
+	@echo "  make certificates-up         - Установить cert-manager и выпустить локальные TLS-сертификаты"
 	@echo "  make traefik-https-proxy     - Опубликовать HTTPS Traefik на стандартном порту 443"
 	@echo "  make traefik-port-forward    - Совместимый псевдоним traefik-https-proxy"
 	@echo "  make all-up                  - Полный цикл: кластер -> helm -> argocd -> дашборды"
@@ -55,6 +56,7 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@echo "🔄 Последовательная регистрация инфраструктурных приложений в Argo CD..."
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/metallb-app.yaml
 	@$(MAKE) wait-application APP=metallb
+	@$(MAKE) certificates-up
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/traefik-app.yaml
 	@$(MAKE) wait-application APP=traefik
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/databases-app.yaml
@@ -67,6 +69,21 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@echo "🔄 Передача управления Application-манифестами корневому App of Apps..."
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
 	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
+
+local-ca-up:
+	@bash ./setup-local-ca.sh
+
+certificates-up: ## Установить cert-manager, локальный CA и сертификаты
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
+	@$(MAKE) wait-application APP=cert-manager
+	@$(MAKE) local-ca-up
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/certificates-app.yaml
+	@$(MAKE) wait-application APP=certificates
+	@kubectl wait --for=condition=Ready certificate/argocd-local-tls -n argocd --timeout=180s
+	@kubectl wait --for=condition=Ready certificate/mediapulse-local-tls -n default --timeout=180s
+	@kubectl wait --for=condition=Ready certificate/traefik-local-tls -n traefik --timeout=180s
+	@kubectl wait --for=condition=Ready certificate/k8s-local-tls -n kubernetes-dashboard --timeout=180s
+	@kubectl wait --for=condition=Ready certificate/kubernetes-dashboard-internal-tls -n kubernetes-dashboard --timeout=180s
 
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
