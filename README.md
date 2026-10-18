@@ -40,24 +40,26 @@ make help
 Показывает список всех доступных команд.
 
 Также доступны `make cluster-up`, `make cluster-down`, `make cluster-status`,
-`make argocd-up`, `make dashboard-up` и `make traefik-port-forward`.
+`make argocd-up`, `make dashboard-up` и `make traefik-https-proxy`.
 
 ### 🔑 Доступ к панелям управления
 
 После выполнения `make all-up` данные для входа выводятся в терминал:
 
-- Argo CD UI: `https://argocd.local:8443/`, логин `admin`.
-- Kubernetes Dashboard: `https://k8s.local:8443/`, вход по выведенному токену.
-- Mediapulse backend: `https://mediapulse.local:8443/`.
+- Argo CD UI: `https://argocd.local/`, логин `admin`.
+- Kubernetes Dashboard: `https://k8s.local/`, вход по выведенному токену.
+- Mediapulse app: `https://mediapulse.local/`.
 
 > [!NOTE]
-> Запустите `make traefik-port-forward` в отдельном терминале. В Windows
-> добавьте в `C:\Windows\System32\drivers\etc\hosts` строку, подставив адрес
+> Команда `make all-up` автоматически публикует HTTPS Traefik на порту 443;
+> port-forward запускать не нужно. В Windows добавьте в
+> `C:\Windows\System32\drivers\etc\hosts` строку, подставив адрес
 > WSL2, который вывел `make all-up`:
 > ```
 > <WSL2_IP> argocd.local traefik.local k8s.local mediapulse.local
 > ```
-> Для доступа из WSL2 через port-forward используйте `127.0.0.1` в `/etc/hosts`.
+> Запросы направляются в Traefik через WSL2; имена доменов маршрутизируются
+> внутри Traefik по Host header.
 > TLS-сертификат самоподписанный; при первом заходе браузер покажет предупреждение.
 
 

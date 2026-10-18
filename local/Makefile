@@ -1,7 +1,7 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up wait-application dashboard-up traefik-port-forward all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up wait-application dashboard-up traefik-https-proxy traefik-port-forward all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -12,7 +12,8 @@ help: ## Показать список доступных команд
 	@echo "  make helm-up                 - Установить Helm CLI"
 	@echo "  make argocd-up               - Установить Argo CD и последовательно приложения"
 	@echo "  make dashboard-up            - Проверить маршруты и вывести данные доступа"
-	@echo "  make traefik-port-forward    - Пробросить порт Traefik для доступа из Windows"
+	@echo "  make traefik-https-proxy     - Опубликовать HTTPS Traefik на стандартном порту 443"
+	@echo "  make traefik-port-forward    - Совместимый псевдоним traefik-https-proxy"
 	@echo "  make all-up                  - Полный цикл: кластер -> helm -> argocd -> дашборды"
 
 cluster-up: ## Создать Kind-кластер, если он ещё не существует
@@ -58,8 +59,8 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@$(MAKE) wait-application APP=traefik
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/databases-app.yaml
 	@$(MAKE) wait-application APP=mediapulse-databases
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/backend-app.yaml
-	@$(MAKE) wait-application APP=mediapulse-backend
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/mediapulse-app.yaml
+	@$(MAKE) wait-application APP=mediapulse-app
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/kubernetes-dashboard-app.yaml
 	@$(MAKE) wait-application APP=kubernetes-dashboard
 
@@ -81,15 +82,31 @@ wait-application:
 		exit 1; \
 	}
 
-dashboard-up: ## Запустить скрипт настройки маршрутов и дашбордов
+dashboard-up: traefik-https-proxy ## Запустить скрипт настройки маршрутов и дашбордов
 	@echo "🌐 Запуск скрипта конфигурации окружения..."
 	@chmod +x ./dev-dashboard.sh
 	./dev-dashboard.sh
 
-traefik-port-forward: ## Пробросить порт Traefik для доступа из Windows (запускайте в отдельном терминале)
-	@echo "🔗 Пробрасываю порт Traefik для доступа из Windows..."
-	kubectl port-forward --address 0.0.0.0 service/traefik 8443:443 -n traefik
+traefik-https-proxy: ## Опубликовать HTTPS Traefik на стандартном порту 443
+	@command -v docker >/dev/null 2>&1 || { echo "❌ Docker не найден."; exit 1; }
+	@docker network inspect kind >/dev/null 2>&1 || { echo "❌ Docker network kind не найдена; сначала создай Kind-кластер."; exit 1; }
+	@kubectl -n traefik get service traefik >/dev/null
+	@if docker container inspect mediapulse-traefik-https-proxy >/dev/null 2>&1; then \
+		if [ "$$(docker container inspect --format '{{.State.Running}}' mediapulse-traefik-https-proxy)" != "true" ]; then \
+			docker start mediapulse-traefik-https-proxy; \
+		else \
+			echo "✅ HTTPS proxy уже опубликован на порту 443."; \
+		fi; \
+	else \
+		TRAEFIK_IP=$$(kubectl -n traefik get service traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'); \
+		test -n "$$TRAEFIK_IP" || { echo "❌ У сервиса Traefik ещё нет LoadBalancer IP."; exit 1; }; \
+		docker run --detach --name mediapulse-traefik-https-proxy --restart unless-stopped \
+			--network kind --publish 443:443 alpine/socat@sha256:22d77becaeeea8ef56b8c4bb2312323acafe85354be6a85714ff5050e3537842 \
+			TCP-LISTEN:443,fork,reuseaddr TCP:$$TRAEFIK_IP:443; \
+	fi
+
+traefik-port-forward: traefik-https-proxy ## Совместимый псевдоним для публикации HTTPS на порту 443
 
 all-up: cluster-up helm-up argocd-up dashboard-up ## Полный идемпотентный цикл развертывания
 	@echo "🎉 Кластер, Argo CD и приложения успешно развернуты."
-	@echo "   Для доступа из Windows запустите в отдельном терминале: make traefik-port-forward"
+	@echo "   HTTPS доступен на стандартном порту 443; port-forward запускать не нужно."
