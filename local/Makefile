@@ -1,4 +1,5 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
+ARGOCD_APP_TIMEOUT ?= 600s
 
 .PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up wait-application dashboard-up traefik-port-forward all-up
 .NOTPARALLEL: all-up
@@ -69,8 +70,16 @@ argocd-up: ## Установить ArgoCD и применить корневой
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
 	@echo "⏳ Ожидание синхронизации и готовности Application $(APP)..."
-	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/$(APP) --timeout=300s
-	@kubectl -n argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/$(APP) --timeout=300s
+	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
+		echo "❌ Application $(APP) не синхронизировалось. Диагностика:"; \
+		kubectl -n argocd describe application $(APP); \
+		exit 1; \
+	}
+	@kubectl -n argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
+		echo "❌ Application $(APP) не стало Healthy. Диагностика:"; \
+		kubectl -n argocd describe application $(APP); \
+		exit 1; \
+	}
 
 dashboard-up: ## Запустить скрипт настройки маршрутов и дашбордов
 	@echo "🌐 Запуск скрипта конфигурации окружения..."
