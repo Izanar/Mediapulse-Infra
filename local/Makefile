@@ -1,6 +1,7 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up dashboard-up traefik-port-forward all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up wait-application dashboard-up traefik-port-forward all-up
+.NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
 	@echo "Доступные команды в mediapulse-infra:"
@@ -8,14 +9,19 @@ help: ## Показать список доступных команд
 	@echo "  make cluster-down            - Удалить Kind-кластер"
 	@echo "  make cluster-status          - Проверить статус нод кластера"
 	@echo "  make helm-up                 - Установить Helm CLI"
-	@echo "  make argocd-up               - Установить ArgoCD и применить root.yaml"
-	@echo "  make dashboard-up            - Запустить скрипт настройки Ingress и дашбордов"
+	@echo "  make argocd-up               - Установить Argo CD и последовательно приложения"
+	@echo "  make dashboard-up            - Проверить маршруты и вывести данные доступа"
 	@echo "  make traefik-port-forward    - Пробросить порт Traefik для доступа из Windows"
 	@echo "  make all-up                  - Полный цикл: кластер -> helm -> argocd -> дашборды"
 
-cluster-up: ## Создать Kind-кластер
-	@echo "🚀 Запуск Kind-кластера mediapulse-cluster..."
-	kind create cluster --config ./kind-config.yaml
+cluster-up: ## Создать Kind-кластер, если он ещё не существует
+	@if kind get clusters | grep -Fxq mediapulse-cluster; then \
+		echo "✅ Кластер mediapulse-cluster уже существует; обновляю kubeconfig."; \
+		kind export kubeconfig --name mediapulse-cluster; \
+	else \
+		echo "🚀 Запуск Kind-кластера mediapulse-cluster..."; \
+		kind create cluster --config ./kind-config.yaml; \
+	fi
 
 cluster-down: ## Удалить Kind-кластер
 	@echo "🛑 Удаление Kind-кластера mediapulse-cluster..."
@@ -36,15 +42,35 @@ helm-up: ## Установить Helm CLI, если его ещё нет
 argocd-up: ## Установить ArgoCD и применить корневой App-of-Apps
 	@echo "📦 Установка ArgoCD..."
 	@command -v helm >/dev/null 2>&1 || { echo "❌ Helm не найден. Выполни: make helm-up"; exit 1; }
+	@test -f $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml || { echo "❌ Не найден файл $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml"; exit 1; }
 	@kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
 	helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm --version 7.0.0 \
 		--namespace argocd --values $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml
-	
+
 	@echo "⏳ Ожидание запуска ArgoCD API сервер..."
-	@kubectl -n argocd rollout status deploy/argocd-server --timeout=120s || true
-	
-	@echo "🔄 Применение корневого манифеста (root.yaml)..."
-	kubectl apply -f ../../Mediapulse-Gitops/local/argocd/root.yaml
+	@kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
+
+	@echo "🔄 Последовательная регистрация инфраструктурных приложений в Argo CD..."
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/metallb-app.yaml
+	@$(MAKE) wait-application APP=metallb
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/traefik-app.yaml
+	@$(MAKE) wait-application APP=traefik
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/databases-app.yaml
+	@$(MAKE) wait-application APP=mediapulse-databases
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/backend-app.yaml
+	@$(MAKE) wait-application APP=mediapulse-backend
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/kubernetes-dashboard-app.yaml
+	@$(MAKE) wait-application APP=kubernetes-dashboard
+
+	@echo "🔄 Передача управления Application-манифестами корневому App of Apps..."
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
+	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
+
+wait-application:
+	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
+	@echo "⏳ Ожидание синхронизации и готовности Application $(APP)..."
+	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/$(APP) --timeout=300s
+	@kubectl -n argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/$(APP) --timeout=300s
 
 dashboard-up: ## Запустить скрипт настройки маршрутов и дашбордов
 	@echo "🌐 Запуск скрипта конфигурации окружения..."
@@ -55,17 +81,6 @@ traefik-port-forward: ## Пробросить порт Traefik для досту
 	@echo "🔗 Пробрасываю порт Traefik для доступа из Windows..."
 	kubectl port-forward --address 0.0.0.0 service/traefik 8443:443 -n traefik
 
-all-up: cluster-up helm-up argocd-up dashboard-up ## Полный цикл развертывания
-	@echo "🎉 Вся инфраструктура, ArgoCD и локальные дашборды успешно запущены!"
-	@echo ""
-	@echo "⏳ Ожидание синхронизации MetalLB и Traefik через ArgoCD..."
-	@kubectl -n argocd wait --for=condition=Synced application/metallb --timeout=120s 2>/dev/null || true
-	@kubectl -n argocd wait --for=condition=Synced application/traefik --timeout=120s 2>/dev/null || true
-	@echo ""
-	@echo "	@echo "	@echo "📋 Далее для доступа из Windows:"
-	@echo "   1) В C:\\Windows\\System32\\drivers\\etc\\hosts (от имени администратора):"
-	@echo "      127.0.0.1 argocd.local traefik.local k8s.local mediapulse.local"
-	@echo "      Или <WSL2_IP> <домен> для доступа из Windows через WSL2 port-forward."	@echo "   2) В отдельном терминале запустите:"
-	@echo "      make traefik-port-forward"
-	@echo ""
-	@echo "   3) Откройте в браузере: https://argocd.local:8443/"
+all-up: cluster-up helm-up argocd-up dashboard-up ## Полный идемпотентный цикл развертывания
+	@echo "🎉 Кластер, Argo CD и приложения успешно развернуты."
+	@echo "   Для доступа из Windows запустите в отдельном терминале: make traefik-port-forward"

@@ -11,61 +11,54 @@
 
 ## 🚀 Быстрый старт (Одна команда)
 
-Убедитесь, что у вас установлены `Docker`, `kubectl` и `kind`, затем выполните:
+Убедитесь, что у вас установлены `Docker`, `kubectl` и `kind`, затем выполните
+из каталога `local/`:
 
 ```bash
+cd local
 make all-up
-Эта команда автоматически:
-1. Создаст локальный мульти-нодовый кластер Kind (1 Control-Plane + 3 Worker ноды).
-2. Развернет Traefik Ingress Controller.
-3. Установит ArgoCD в отдельный namespace.
-4. Запустит дашборды и пробросит порты.
+```
 
-📋 Доступные команды (Makefile)
+Команда идемпотентна: использует существующий кластер `mediapulse-cluster`,
+если он уже создан, и выполняет шаги по порядку:
+1. Создаёт Kind-кластер, если его ещё нет.
+2. Проверяет наличие Helm.
+3. Устанавливает Argo CD без зависимости от ещё не установленного Traefik.
+4. Через Argo CD последовательно разворачивает MetalLB, Traefik, базы данных,
+   backend и Kubernetes Dashboard, затем передаёт Application-манифесты под
+   управление `root-app`.
+5. Проверяет готовность компонентов и выводит данные для доступа.
+
+### 📋 Доступные команды (Makefile)
+
+Выполняйте команды из каталога `local/`.
+
+```bash
 make help
-Показать список всех доступных команд
+```
 
-make cluster-up
-Развернуть локальный Kind-кластер
+Показывает список всех доступных команд.
 
-make cluster-down
-Удалить кластер и освободить ресурсы
+Также доступны `make cluster-up`, `make cluster-down`, `make cluster-status`,
+`make argocd-up`, `make dashboard-up` и `make traefik-port-forward`.
 
-make cluster-status
-Вывести статус нод кластера (kubectl get nodes)
+### 🔑 Доступ к панелям управления
 
-make ingress-up
-Установить Traefik Ingress Controller
+После выполнения `make all-up` данные для входа выводятся в терминал:
 
-make argocd-up
-Установить ArgoCD через Helm (идемпотентно). Единственная точка установки ArgoCD —
-скрипт dev-dashboard.sh её не дублирует, а только проверяет, что ArgoCD развёрнут.
+- Argo CD UI: `https://argocd.local:8443/`, логин `admin`.
+- Kubernetes Dashboard: `https://k8s.local:8443/`, вход по выведенному токену.
+- Mediapulse backend: `https://mediapulse.local:8443/`.
 
-make dev-gui
-Развернуть веб-интерфейсы (ArgoCD + Kubernetes Dashboard) через Ingress.
-⚠️ Требует, чтобы ArgoCD уже был установлен командой make argocd-up.
-
-🔑 Доступ к панелям управления (GUI)
-После выполнения make dev-gui вам будут доступны:
-ArgoCD UI: https://argocd.local
-Логин: admin
-Пароль: Выведется в терминале при запуске make argocd-up (или извлекается секретом: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-
-Kubernetes Dashboard: https://dashboard.local
-Токен: Автоматически копируется в буфер обмена (или выводится в терминал скриптом).
 > [!NOTE]
-> Оба адреса работают через Traefik Ingress Controller, который пробрасывает
-> порты 80/443 из Kind-ноды на хост (см. `extraPortMappings` в `kind-config.yaml`).
-> Убедитесь, что в `/etc/hosts` (Windows: `C:\Windows\System32\drivers\etc\hosts`)
-> есть строка:
+> Запустите `make traefik-port-forward` в отдельном терминале. В Windows
+> добавьте в `C:\Windows\System32\drivers\etc\hosts` строку, подставив адрес
+> WSL2, который вывел `make all-up`:
 > ```
-> 127.0.0.1 argocd.local dashboard.local
+> <WSL2_IP> argocd.local traefik.local k8s.local mediapulse.local
 > ```
-> Своего TLS-сертификата нет намеренно: секции `tls` в манифестах нет, поэтому
-> Traefik отдаёт свой дефолтный самоподписанный сертификат, и браузер при
-> первом заходе покажет предупреждение — его нужно принять один раз. Так в
-> кластере и репозитории не появляется секрет с приватным ключом. Когда появится
-> домен или cert-manager, достаточно добавить секцию `tls` в `argocd-ingress.yaml`.
+> Для доступа из WSL2 через port-forward используйте `127.0.0.1` в `/etc/hosts`.
+> TLS-сертификат самоподписанный; при первом заходе браузер покажет предупреждение.
 
 
 
@@ -74,7 +67,6 @@ Plaintext
 mediapulse-infra/
 ├── local/
 │   ├── kind-config.yaml       # Топология Kind-кластера (1 Master + 3 Workers)
-│   └── dev-dashboard.sh       # Скрипт развёртывания веб-интерфейсов (Ingress + токен K8s Dashboard).
-                               # ArgoCD здесь НЕ устанавливается — только make argocd-up это делает.
-├── Makefile                   # Точки входа для автоматизации
+│   ├── dev-dashboard.sh       # Проверка готовности маршрутов и вывод токенов
+│   └── Makefile               # Точки входа для автоматизации
 └── README.md                  # Документация проекта
