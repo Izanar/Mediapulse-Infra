@@ -40,7 +40,7 @@ fi
 
 # 4. Рекомендация по hosts (скрипт НЕ правит hosts автоматически).
 # При доступе через port-forward WSL2 использует localhost, Windows — IP WSL2.
-WSL2_IP=$(ip addr show eth0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 || true)
+WSL2_IP=$(ip -4 -o addr show dev eth0 2>/dev/null | awk '{split($4, address, "/"); print address[1]}' || true)
 if [ -z "$WSL2_IP" ]; then
     WSL2_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
 fi
@@ -74,13 +74,13 @@ echo "    (от имени администратора) добавьте стр
 echo "      $WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
 echo "    Скрипт hosts не правит — добавьте строку вручную."
 echo ""
-echo "2️⃣  В отдельном терминале WSL2 запустите port-forward:"
-echo "      kubectl port-forward --address 0.0.0.0 service/traefik 8443:443 -n traefik"
-echo "    Или используйте: make traefik-port-forward"
+echo "2️⃣  HTTPS Traefik опубликован на стандартном порту 443."
+echo "    Для повторного запуска публикации используйте: make traefik-https-proxy"
 echo ""
 echo "3️⃣  Откройте в браузере Windows:"
-echo "      https://argocd.local:8443/       (ArgoCD)"
-echo "      https://traefik.local:8443/dashboard/  (Traefik UI)"
-echo "      https://k8s.local:8443/          (K8s Dashboard)"
+echo "      https://argocd.local/       (ArgoCD)"
+echo "      https://k8s.local/          (K8s Dashboard)"
+echo "      https://mediapulse.local/   (Mediapulse)"
+echo "      https://traefik.local/dashboard/  (Traefik UI)"
 
 echo "================================================================"
