@@ -70,21 +70,11 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
 	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
 
-local-ca-up:
-	@bash ./setup-local-ca.sh
-
-certificates-up: ## Установить cert-manager, локальный CA и сертификаты
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
+certificates-up: ## Установить cert-manager и выпустить TLS-сертификаты (локальный CA поднимается ArgoCD Job)
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
 	@$(MAKE) wait-application APP=cert-manager
-	@$(MAKE) local-ca-up
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/certificates-app.yaml
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/certificates-app.yaml
 	@$(MAKE) wait-application APP=certificates
-	@kubectl wait --for=condition=Ready certificate/argocd-local-tls -n argocd --timeout=180s
-	@kubectl wait --for=condition=Ready certificate/mediapulse-local-tls -n default --timeout=180s
-	@kubectl wait --for=condition=Ready certificate/traefik-local-tls -n traefik --timeout=180s
-	@kubectl wait --for=condition=Ready certificate/k8s-local-tls -n kubernetes-dashboard --timeout=180s
-	@kubectl wait --for=condition=Ready certificate/kubernetes-dashboard-internal-tls -n kubernetes-dashboard --timeout=180s
-
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
 	@echo "⏳ Ожидание синхронизации и готовности Application $(APP)..."
