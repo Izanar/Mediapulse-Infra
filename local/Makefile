@@ -12,7 +12,7 @@ help: ## Показать список доступных команд
 	@echo "  make helm-up                 - Установить Helm CLI"
 	@echo "  make argocd-up               - Установить Argo CD и последовательно приложения"
 	@echo "  make dashboard-up            - Проверить маршруты и вывести данные доступа"
-	@echo "  make certificates-up         - Установить cert-manager и выпустить локальные TLS-сертификаты"
+	@echo "  make certificates-up         - Установить cert-manager, локальный CA и выпустить TLS-сертификаты"
 	@echo "  make traefik-https-proxy     - Опубликовать HTTPS Traefik на стандартном порту 443"
 	@echo "  make traefik-port-forward    - Совместимый псевдоним traefik-https-proxy"
 	@echo "  make all-up                  - Полный цикл: кластер -> helm -> argocd -> дашборды"
@@ -70,11 +70,17 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
 	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
 
-certificates-up: ## Установить cert-manager и выпустить TLS-сертификаты (локальный CA поднимается ArgoCD Job)
+certificates-up: ## Установить cert-manager, локальный CA и выпустить TLS-сертификаты
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
 	@$(MAKE) wait-application APP=cert-manager
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/local-ca-app.yaml
+	@$(MAKE) wait-application APP=local-ca
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/certificates-app.yaml
 	@$(MAKE) wait-application APP=certificates
+
+local-ca-up: ## Поднять локальный CA (Job создаёт Secret mediapulse-local-ca) перед выпуском сертификатов
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/local-ca-app.yaml
+	@$(MAKE) wait-application APP=local-ca
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
 	@echo "⏳ Ожидание синхронизации и готовности Application $(APP)..."
