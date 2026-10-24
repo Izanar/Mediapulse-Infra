@@ -1,7 +1,7 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up wait-application dashboard-up local-ca-up certificates-up traefik-https-proxy traefik-port-forward all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up vault-up secrets-init wait-application wait-application-synced dashboard-up local-ca-up certificates-up traefik-https-proxy traefik-port-forward all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -64,9 +64,6 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	# Добавляем установку Vault и ESO
 	@$(MAKE) vault-up
 
-	# Инициализируем секреты в Vault после поднятия самого Vault
-	@$(MAKE) secrets-init
-
 	# Создаём Kubernetes Secret до запуска PostgreSQL
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/secrets-app.yaml
 	@$(MAKE) wait-application APP=mediapulse-secrets
@@ -89,11 +86,12 @@ vault-up: ## Установить HashiCorp Vault и External Secrets Operator �
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/external-secrets-app.yaml
 	@$(MAKE) wait-application APP=external-secrets
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/vault-app.yaml
+	@$(MAKE) wait-application-synced APP=vault
+	@$(MAKE) secrets-init
 	@$(MAKE) wait-application APP=vault
 
 secrets-init: ## Инициализировать секреты в Vault
-	@echo "🔑 Запуск скрипта инициализации локальных секретов..."
-	@chmod +x ./init-local-secrets.sh
+	@echo "🔐 Инициализация Vault и загрузка локальных секретов..."
 	./init-local-secrets.sh
 
 certificates-up: ## Установить cert-manager, локальный CA и выпустить TLS-сертификаты
@@ -110,13 +108,16 @@ local-ca-up: ## Поднять локальный CA (Job создаёт Secret 
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
 	@echo "⏳ Ожидание синхронизации и готовности Application $(APP)..."
-	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
-		echo "❌ Application $(APP) не синхронизировалось. Диагностика:"; \
+	@$(MAKE) wait-application-synced APP=$(APP)
+	@kubectl -n argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
+		echo "❌ Application $(APP) не стало Healthy. Диагностика:"; \
 		kubectl -n argocd describe application $(APP); \
 		exit 1; \
 	}
-	@kubectl -n argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
-		echo "❌ Application $(APP) не стало Healthy. Диагностика:"; \
+wait-application-synced:
+	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application-synced APP=vault"; exit 1; }
+	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
+		echo "❌ Application $(APP) не синхронизировалось. Диагностика:"; \
 		kubectl -n argocd describe application $(APP); \
 		exit 1; \
 	}
