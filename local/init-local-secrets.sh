@@ -15,7 +15,7 @@ source "$ENV_PATH"
 set +a
 
 echo "⏳ Ожидание запуска Vault в кластере..."
-kubectl rollout status deployment/vault -n vault --timeout=120s
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=vault -n vault --timeout=60s
 
 VAULT_POD=$(kubectl get pod -l app.kubernetes.io/name=vault -n vault -o jsonpath="{.items[0].metadata.name}")
 
