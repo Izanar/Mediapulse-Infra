@@ -29,6 +29,8 @@ make all-up
    Vault и External Secrets Operator. Загружает секреты из `.env` в Vault,
    создаёт из них Kubernetes Secret, и только затем запускает базы и приложение.
    В конце разворачивает Kubernetes Dashboard.
+   Токен ESO имеет только read-доступ к секретам MediaPulse и действует 30 дней;
+   повторный `make secrets-init` обновляет его.
 5. Передаёт Application-манифесты под управление `root-app`, публикует HTTPS
    на порту 443 и выводит данные для доступа.
 

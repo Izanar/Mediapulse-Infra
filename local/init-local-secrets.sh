@@ -19,12 +19,6 @@ kubectl rollout status deployment/vault -n vault --timeout=120s
 
 VAULT_POD=$(kubectl get pod -l app.kubernetes.io/name=vault -n vault -o jsonpath="{.items[0].metadata.name}")
 
-echo "🔑 Передача токена для External Secrets Operator..."
-kubectl create secret generic vault-token \
-    --namespace=default \
-    --from-literal=token="root" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
 echo "📝 Запись секретов из локального .env в Vault..."
 kubectl exec -i "$VAULT_POD" -n vault -- sh -c "
   export VAULT_ADDR='http://127.0.0.1:8200'
@@ -43,6 +37,25 @@ kubectl exec -i "$VAULT_POD" -n vault -- sh -c "
     s3_access_key='$S3_ACCESS_KEY' \
     s3_secret_key='$S3_SECRET_KEY' \
     s3_bucket_name='$S3_BUCKET_NAME'
+
+  vault policy write mediapulse-eso - <<'POLICY'
+path \"secret/data/mediapulse\" {
+  capabilities = [\"read\"]
+}
+POLICY
 "
+
+echo "🔑 Создание ограниченного токена для External Secrets Operator..."
+ESO_TOKEN="$(kubectl exec "$VAULT_POD" -n vault -- sh -c "
+  export VAULT_ADDR='http://127.0.0.1:8200'
+  export VAULT_TOKEN='root'
+  vault token create -orphan -no-default-policy -policy=mediapulse-eso -ttl=720h -field=token
+")"
+
+printf '%s' "$ESO_TOKEN" | kubectl create secret generic vault-token \
+    --namespace=default \
+    --from-file=token=/dev/stdin \
+    --dry-run=client -o yaml | kubectl apply -f -
+unset ESO_TOKEN
 
 echo "✅ Локальные секреты успешно переданы в Vault!"
