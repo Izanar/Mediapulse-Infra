@@ -1,7 +1,7 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up vault-up secrets-init wait-application wait-application-synced dashboard-up local-ca-up certificates-up traefik-https-proxy traefik-port-forward all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up vault-up secrets-init wait-application wait-application-synced dashboard-up local-ca-up certificates-up traefik-https-proxy cloudflare-tunnel-up traefik-port-forward all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -16,7 +16,8 @@ help: ## Показать список доступных команд
 	@echo "  make vault-up               - Установить HashiCorp Vault и External Secrets Operator"
 	@echo "  make secrets-init           - Заполнить локальные секреты в Vault скриптом"
 	@echo "  make traefik-https-proxy     - Опубликовать HTTPS Traefik на стандартном порту 443"
-	@echo "  make all-up                 - Полный цикл: кластер -> helm -> argocd -> vault -> секреты -> дашборды"
+	@echo "  make cloudflare-tunnel-up   - Запустить Cloudflare Tunnel с локальным token-файлом"
+	@echo "  make all-up                 - Полный цикл: кластер -> приложения -> Cloudflare Tunnel"
 
 cluster-up: ## Создать Kind-кластер, если он ещё не существует
 	@if kind get clusters | grep -Fxq mediapulse-cluster; then \
@@ -127,7 +128,7 @@ dashboard-up: traefik-https-proxy ## Запустить скрипт настр�
 	@chmod +x ./dev-dashboard.sh
 	./dev-dashboard.sh
 
-traefik-https-proxy: ## Опубликовать HTTPS Traefik на стандартном порту 443
+traefik-https-proxy: ## Опубликовать HTTPS Traefik на стандартном порту 443 (локальный origin для туннеля)
 	@command -v docker >/dev/null 2>&1 || { echo "❌ Docker не найден."; exit 1; }
 	@docker network inspect kind >/dev/null 2>&1 || { echo "❌ Docker network kind не найдена; сначала создай Kind-кластер."; exit 1; }
 	@kubectl -n traefik get service traefik >/dev/null
@@ -145,6 +146,9 @@ traefik-https-proxy: ## Опубликовать HTTPS Traefik на станда
 			TCP-LISTEN:443,fork,reuseaddr TCP:$$TRAEFIK_IP:443; \
 	fi
 
-all-up: cluster-up helm-up argocd-up dashboard-up ## Полный идемпотентный цикл развертывания
+cloudflare-tunnel-up: traefik-https-proxy ## Запустить удалённо управляемый Cloudflare Tunnel
+	@bash ./cloudflare-tunnel-up.sh
+
+all-up: cluster-up helm-up argocd-up dashboard-up cloudflare-tunnel-up ## Полный идемпотентный цикл развертывания
 	@echo "🎉 Кластер, Argo CD, Vault и приложения успешно развернуты."
-	@echo "   HTTPS доступен на стандартном порту 443; port-forward запускать не нужно."
+	@echo "   Публичный HTTPS доступен через Cloudflare Tunnel."

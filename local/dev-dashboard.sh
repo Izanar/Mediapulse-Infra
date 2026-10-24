@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ARGOCD_HOST="argocd.local"
-TRAEFIK_HOST="traefik.local"
+ARGOCD_HOST="argocd.izanar.dev"
+TRAEFIK_HOST="traefik.izanar.dev"
+MEDIAPULSE_HOST="mediapulse.izanar.dev"
+KIND_HOST="kind.izanar.dev"
 
 echo "🚀 Настройка локальных дашбордов и Ingress-маршрутов..."
 
@@ -34,11 +36,6 @@ for _ in $(seq 1 60); do
     TRAEFIK_IP=$(kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 done
 
-WSL2_IP=$(ip -4 -o addr show dev eth0 2>/dev/null | awk '{split($4, address, "/"); print address[1]}' || true)
-if [ -z "$WSL2_IP" ]; then
-    WSL2_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
-fi
-
 # 4. Вывод учетных данных
 echo "🔑 Данные для доступа:"
 echo "------------------------------------------------------------------------"
@@ -51,21 +48,14 @@ echo "• K8s Dashboard токен (admin-user): $DASHBOARD_TOKEN"
 echo "------------------------------------------------------------------------"
 
 echo "================================================================"
-echo "🎉 ОКРУЖЕНИЕ ГОТОВО — шаги для доступа из Windows браузера:"
+echo "🎉 ОКРУЖЕНИЕ ГОТОВО — адреса после подключения Cloudflare Tunnel:"
 echo "================================================================"
 echo ""
-echo "1️⃣  В файле C:\\Windows\\System32\\drivers\\etc\\hosts"
-echo "    (от имени администратора) добавьте строку:"
-echo "      $WSL2_IP $ARGOCD_HOST $TRAEFIK_HOST k8s.local mediapulse.local"
-echo "    Скрипт hosts не правит — добавьте строку вручную."
+echo "      https://$ARGOCD_HOST/       (ArgoCD; требуется Cloudflare Access)"
+echo "      https://$KIND_HOST/         (Kubernetes Dashboard; требуется Cloudflare Access)"
+echo "      https://$MEDIAPULSE_HOST/   (Mediapulse)"
+echo "      https://$TRAEFIK_HOST/dashboard/ (Traefik UI; требуется Cloudflare Access)"
 echo ""
-echo "2️⃣  HTTPS Traefik опубликован на стандартном порту 443."
-echo "    Для повторного запуска публикации используйте: make traefik-https-proxy"
-echo ""
-echo "3️⃣  Откройте в браузере Windows:"
-echo "      https://argocd.local/       (ArgoCD)"
-echo "      https://k8s.local/          (K8s Dashboard)"
-echo "      https://mediapulse.local/   (Mediapulse)"
-echo "      https://traefik.local/dashboard/  (Traefik UI)"
+echo "Cloudflare Tunnel запускается командой: make cloudflare-tunnel-up"
 
 echo "================================================================"

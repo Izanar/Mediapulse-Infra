@@ -63,25 +63,51 @@ make help
 
 После выполнения `make all-up` данные для входа выводятся в терминал:
 
-- Argo CD UI: `https://argocd.local/`, логин `admin`.
-- Kubernetes Dashboard: `https://k8s.local/`, вход по выведенному токену.
-- Mediapulse app: `https://mediapulse.local/`.
+- Argo CD UI: `https://argocd.izanar.dev/`, логин `admin`; требуется Cloudflare Access.
+- Kubernetes Dashboard: `https://kind.izanar.dev/`; требуется Cloudflare Access и токен Dashboard.
+- Mediapulse app: `https://mediapulse.izanar.dev/`.
+- Traefik UI: `https://traefik.izanar.dev/dashboard/`; требуется Cloudflare Access.
 
-> [!NOTE]
-> Команда `make all-up` автоматически публикует HTTPS Traefik на порту 443;
-> port-forward запускать не нужно. В Windows добавьте в
-> `C:\Windows\System32\drivers\etc\hosts` строку, подставив адрес
-> WSL2, который вывел `make all-up`:
-> ```
-> <WSL2_IP> argocd.local traefik.local k8s.local mediapulse.local
-> ```
-> Запросы направляются в Traefik через WSL2; имена доменов маршрутизируются
-> внутри Traefik по Host header.
-> Для имён `.local` используется локальный CA: публичные CA не выдают для них
-> сертификаты. `make all-up` запускает cert-manager, который выпускает и
-> обновляет сертификаты для хостов и внутреннего HTTPS Dashboard. Чтобы убрать
-> предупреждение браузера, установите `~/.config/mediapulse/pki/ca.crt` в
-> доверенные корневые сертификаты ОС/браузера. Приватный ключ CA не хранится в Git.
+#### Однократная настройка Cloudflare Tunnel
+
+1. В аккаунте уже настроен remotely-managed Tunnel
+   `ALbert-mediapulse-cluster-tunnel`. Для него созданы Published application
+   routes и DNS-записи для четырёх hostname ниже; origin для каждого —
+   `https://localhost:443`, проверка TLS-сертификата origin отключена, потому
+   что сертификат Traefik выпускается локальным CA.
+2. Cloudflare Access application `MediaPulse Admin Interfaces` защищает
+   `argocd.izanar.dev`, `kind.izanar.dev` и `traefik.izanar.dev` политикой
+   **Allow** только для настроенного адреса владельца. Не публикуйте
+   административные панели без Access. `mediapulse.izanar.dev` оставлен
+   публичным; вход в само приложение контролируется его авторизацией.
+3. В скопированном `Mediapulse-App/.env` задайте `CLOUDFLARE_TUNNEL_TOKEN`
+   значением connector token из Tunnel Dashboard. Добавьте строку из
+   `.env.example`, затем вставьте token локально. Не передавайте его в чат и
+   не коммитьте: `.env` игнорируется Git. Во время `make all-up` скрипт
+   `init-local-secrets.sh` атомарно перенесёт его в
+   `~/.config/mediapulse/cloudflare/tunnel-token` с правами `0600`; token не
+   сохраняется в Vault или Kubernetes:
+
+   ```bash
+   cp -n ../../Mediapulse-App/.env.example ../../Mediapulse-App/.env
+   # В .env установите CLOUDFLARE_TUNNEL_TOKEN=<connector-token>
+   ```
+
+После этого `make all-up` запустит connector контейнер `cloudflare/cloudflared`
+после готовности кластера, а `make cloudflare-tunnel-up` можно использовать
+для повторного запуска. Публичные адреса:
+
+| Сервис | URL | Защита |
+| --- | --- | --- |
+| Mediapulse | `https://mediapulse.izanar.dev/` | Авторизация приложения |
+| Argo CD | `https://argocd.izanar.dev/` | Cloudflare Access |
+| Traefik Dashboard | `https://traefik.izanar.dev/dashboard/` | Cloudflare Access |
+| Kubernetes Dashboard | `https://kind.izanar.dev/` | Cloudflare Access и токен Dashboard |
+
+При использовании Tunnel локальный CA используется только на участке между
+`cloudflared` и Traefik; на клиентском браузере устанавливать его не нужно.
+Туннель направляет origin на локальный HTTPS proxy `localhost:443`; hostname
+из запроса сохраняется для маршрутизации Traefik.
 
 
 
