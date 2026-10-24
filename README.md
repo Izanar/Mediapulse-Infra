@@ -24,9 +24,8 @@ make all-up
 1. Создаёт Kind-кластер, если его ещё нет.
 2. Проверяет наличие Helm.
 3. Устанавливает Argo CD без зависимости от ещё не установленного Traefik.
-4. Устанавливает cert-manager и локальный CA, получает TLS-сертификаты для
-   локальных хостов, затем через Argo CD разворачивает MetalLB, Traefik,
-   Vault и External Secrets Operator. Загружает секреты из `.env` в Vault,
+4. Через Argo CD разворачивает MetalLB, Traefik, Vault и External Secrets
+   Operator. Загружает секреты из `.env` в Vault,
    создаёт из них Kubernetes Secret, и только затем запускает базы и приложение.
    В конце разворачивает Kubernetes Dashboard.
    Vault работает в одноузловом Raft-режиме с PVC. При первом запуске
@@ -43,8 +42,8 @@ make all-up
    Kind PVC; удаление кластера удалит данные Vault. Unseal-конфигурация 1-of-1
    и plaintext bootstrap credential на хосте выбраны ради автоматического
    локального запуска и не подходят для production.
-5. Передаёт Application-манифесты под управление `root-app`, публикует HTTPS
-   на порту 443 и выводит данные для доступа.
+5. Передаёт Application-манифесты под управление `root-app`, проверяет HTTP
+   origin Traefik и выводит данные для доступа.
 
 ### 📋 Доступные команды (Makefile)
 
@@ -57,7 +56,7 @@ make help
 Показывает список всех доступных команд.
 
 Также доступны `make cluster-up`, `make cluster-down`, `make cluster-status`,
-`make argocd-up`, `make dashboard-up` и `make traefik-https-proxy`.
+`make argocd-up`, `make dashboard-up` и `make cloudflare-tunnel-up`.
 
 ### 🔑 Доступ к панелям управления
 
@@ -72,9 +71,10 @@ make help
 
 1. В аккаунте уже настроен remotely-managed Tunnel
    `ALbert-mediapulse-cluster-tunnel`. Для него созданы Published application
-   routes и DNS-записи для четырёх hostname ниже; origin для каждого —
-   `https://localhost:443`, проверка TLS-сертификата origin отключена, потому
-   что сертификат Traefik выпускается локальным CA.
+   routes и DNS-записи для четырёх hostname ниже. Origin каждого route —
+   `http://172.18.255.10:80` (Traefik LoadBalancer в локальном Kind); HTTPS
+   завершается на Cloudflare. Локальный CA, cert-manager и прокси для HTTPS
+   origin не нужны.
 2. Cloudflare Access application `MediaPulse Admin Interfaces` защищает
    `argocd.izanar.dev`, `kind.izanar.dev` и `traefik.izanar.dev` политикой
    **Allow** только для настроенного адреса владельца. Не публикуйте
@@ -104,10 +104,11 @@ make help
 | Traefik Dashboard | `https://traefik.izanar.dev/dashboard/` | Cloudflare Access |
 | Kubernetes Dashboard | `https://kind.izanar.dev/` | Cloudflare Access и токен Dashboard |
 
-При использовании Tunnel локальный CA используется только на участке между
-`cloudflared` и Traefik; на клиентском браузере устанавливать его не нужно.
-Туннель направляет origin на локальный HTTPS proxy `localhost:443`; hostname
-из запроса сохраняется для маршрутизации Traefik.
+Cloudflare Tunnel маршрутизирует origin напрямую на HTTP-порт Traefik
+`172.18.255.10:80`; исходное имя хоста используется Traefik для выбора сервиса.
+TLS от браузера до Cloudflare и исходящее соединение Tunnel до Cloudflare
+остаются зашифрованными. Между connector и локальным Kind используется HTTP
+только по частной Docker-сети хоста.
 
 
 

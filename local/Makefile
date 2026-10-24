@@ -1,7 +1,7 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up vault-up secrets-init wait-application wait-application-synced dashboard-up local-ca-up certificates-up traefik-https-proxy cloudflare-tunnel-up traefik-port-forward all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up vault-up secrets-init wait-application wait-application-synced dashboard-up cloudflare-tunnel-up all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -12,10 +12,8 @@ help: ## Показать список доступных команд
 	@echo "  make helm-up                - Установить Helm CLI"
 	@echo "  make argocd-up              - Установить Argo CD и последовательно приложения"
 	@echo "  make dashboard-up           - Проверить маршруты и вывести данные доступа"
-	@echo "  make certificates-up        - Установить cert-manager, локальный CA и выпустить TLS-сертификаты"
 	@echo "  make vault-up               - Установить HashiCorp Vault и External Secrets Operator"
 	@echo "  make secrets-init           - Заполнить локальные секреты в Vault скриптом"
-	@echo "  make traefik-https-proxy     - Опубликовать HTTPS Traefik на стандартном порту 443"
 	@echo "  make cloudflare-tunnel-up   - Запустить Cloudflare Tunnel с локальным token-файлом"
 	@echo "  make all-up                 - Полный цикл: кластер -> приложения -> Cloudflare Tunnel"
 
@@ -58,7 +56,6 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@echo "🔄 Последовательная регистрация инфраструктурных приложений в Argo CD..."
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/metallb-app.yaml
 	@$(MAKE) wait-application APP=metallb
-	@$(MAKE) certificates-up
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/traefik-app.yaml
 	@$(MAKE) wait-application APP=traefik
 	
@@ -95,17 +92,6 @@ secrets-init: ## Инициализировать секреты в Vault
 	@echo "🔐 Инициализация Vault и загрузка локальных секретов..."
 	bash ./init-local-secrets.sh
 
-certificates-up: ## Установить cert-manager, локальный CA и выпустить TLS-сертификаты
-	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
-	@$(MAKE) wait-application APP=cert-manager
-	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/local-ca-app.yaml
-	@$(MAKE) wait-application APP=local-ca
-	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/certificates-app.yaml
-	@$(MAKE) wait-application APP=certificates
-
-local-ca-up: ## Поднять локальный CA (Job создаёт Secret mediapulse-local-ca) перед выпуском сертификатов
-	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/local-ca-app.yaml
-	@$(MAKE) wait-application APP=local-ca
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
 	@echo "⏳ Ожидание синхронизации и готовности Application $(APP)..."
@@ -123,30 +109,12 @@ wait-application-synced:
 		exit 1; \
 	}
 
-dashboard-up: traefik-https-proxy ## Запустить скрипт настройки маршрутов и дашбордов
+dashboard-up: ## Запустить скрипт настройки маршрутов и дашбордов
 	@echo "🌐 Запуск скрипта конфигурации окружения..."
 	@chmod +x ./dev-dashboard.sh
 	./dev-dashboard.sh
 
-traefik-https-proxy: ## Опубликовать HTTPS Traefik на стандартном порту 443 (локальный origin для туннеля)
-	@command -v docker >/dev/null 2>&1 || { echo "❌ Docker не найден."; exit 1; }
-	@docker network inspect kind >/dev/null 2>&1 || { echo "❌ Docker network kind не найдена; сначала создай Kind-кластер."; exit 1; }
-	@kubectl -n traefik get service traefik >/dev/null
-	@if docker container inspect mediapulse-traefik-https-proxy >/dev/null 2>&1; then \
-		if [ "$$(docker container inspect --format '{{.State.Running}}' mediapulse-traefik-https-proxy)" != "true" ]; then \
-			docker start mediapulse-traefik-https-proxy; \
-		else \
-			echo "✅ HTTPS proxy уже опубликован на порту 443."; \
-		fi; \
-	else \
-		TRAEFIK_IP=$$(kubectl -n traefik get service traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'); \
-		test -n "$$TRAEFIK_IP" || { echo "❌ У сервиса Traefik ещё нет LoadBalancer IP."; exit 1; }; \
-		docker run --detach --name mediapulse-traefik-https-proxy --restart unless-stopped \
-			--network kind --publish 443:443 alpine/socat@sha256:22d77becaeeea8ef56b8c4bb2312323acafe85354be6a85714ff5050e3537842 \
-			TCP-LISTEN:443,fork,reuseaddr TCP:$$TRAEFIK_IP:443; \
-	fi
-
-cloudflare-tunnel-up: traefik-https-proxy ## Запустить удалённо управляемый Cloudflare Tunnel
+cloudflare-tunnel-up: ## Запустить удалённо управляемый Cloudflare Tunnel
 	@bash ./cloudflare-tunnel-up.sh
 
 all-up: cluster-up helm-up argocd-up dashboard-up cloudflare-tunnel-up ## Полный идемпотентный цикл развертывания

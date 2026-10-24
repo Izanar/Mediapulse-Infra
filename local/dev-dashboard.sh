@@ -10,7 +10,7 @@ echo "🚀 Настройка локальных дашбордов и Ingress-�
 
 # 1. Проверяем CRD Traefik, прежде чем использовать маршруты на их основе.
 echo "⏳ Ожидание установки Traefik и его CRD в кластере..."
-kubectl wait --for=condition=Established crd/ingressroutes.traefik.io crd/serverstransports.traefik.io --timeout=180s
+kubectl wait --for=condition=Established crd/ingressroutes.traefik.io --timeout=180s
 echo "✅ CRD Traefik обнаружены!"
 
 # 2. Ждём готовности Dashboard и Traefik.
@@ -24,7 +24,7 @@ kubectl -n argocd get ingress argocd-server-ingress
 kubectl -n traefik get ingressroute traefik-dashboard
 kubectl -n kubernetes-dashboard get ingressroute k8s-dashboard-ingress
 
-# 3. Ждем, пока Traefik получит внешний IP от MetalLB
+# 3. Ждём, пока Traefik получит IP origin для Cloudflare Tunnel.
 echo "⏳ Ожидание внешнего IP у сервиса Traefik (MetalLB)..."
 TRAEFIK_IP=$(kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 for _ in $(seq 1 60); do
@@ -35,6 +35,12 @@ for _ in $(seq 1 60); do
     sleep 3
     TRAEFIK_IP=$(kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 done
+if [ -z "$TRAEFIK_IP" ]; then
+    echo "❌ У сервиса Traefik не появился IP MetalLB за 180 секунд." >&2
+    exit 1
+fi
+curl --fail --silent --show-error --max-time 5 \
+    -H "Host: $MEDIAPULSE_HOST" "http://$TRAEFIK_IP/" >/dev/null
 
 # 4. Вывод учетных данных
 echo "🔑 Данные для доступа:"
@@ -56,6 +62,7 @@ echo "      https://$KIND_HOST/         (Kubernetes Dashboard; требуетс�
 echo "      https://$MEDIAPULSE_HOST/   (Mediapulse)"
 echo "      https://$TRAEFIK_HOST/dashboard/ (Traefik UI; требуется Cloudflare Access)"
 echo ""
+echo "Cloudflare Tunnel направляется на HTTP origin Traefik $TRAEFIK_IP:80."
 echo "Cloudflare Tunnel запускается командой: make cloudflare-tunnel-up"
 
 echo "================================================================"
