@@ -25,8 +25,10 @@ make all-up
 2. Проверяет наличие Helm.
 3. Устанавливает Argo CD без зависимости от ещё не установленного Traefik.
 4. Устанавливает cert-manager и локальный CA, получает TLS-сертификаты для
-   локальных хостов, затем через Argo CD разворачивает MetalLB, Traefik, базы,
-   приложение и Kubernetes Dashboard.
+   локальных хостов, затем через Argo CD разворачивает MetalLB, Traefik,
+   Vault и External Secrets Operator. Загружает секреты из `.env` в Vault,
+   создаёт из них Kubernetes Secret, и только затем запускает базы и приложение.
+   В конце разворачивает Kubernetes Dashboard.
 5. Передаёт Application-манифесты под управление `root-app`, публикует HTTPS
    на порту 443 и выводит данные для доступа.
 

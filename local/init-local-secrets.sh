@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-## Путь к локальному .env файлу в соседней папке приложения
-ENV_PATH="../Mediapulse-App/.env"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ENV_PATH="$SCRIPT_DIR/../../Mediapulse-App/.env"
 
 if [ ! -f "$ENV_PATH" ]; then
     echo "❌ Файл .env не найден по пути $ENV_PATH!"

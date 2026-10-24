@@ -64,11 +64,16 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	# Добавляем установку Vault и ESO
 	@$(MAKE) vault-up
 
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/databases-app.yaml
-	@$(MAKE) wait-application APP=mediapulse-databases
-	
 	# Инициализируем секреты в Vault после поднятия самого Vault
 	@$(MAKE) secrets-init
+
+	# Создаём Kubernetes Secret до запуска PostgreSQL
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/secrets-app.yaml
+	@$(MAKE) wait-application APP=mediapulse-secrets
+	@kubectl -n default wait --for=condition=Ready externalsecrets.external-secrets.io/mediapulse-app-secrets --timeout=$(ARGOCD_APP_TIMEOUT)
+
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/databases-app.yaml
+	@$(MAKE) wait-application APP=mediapulse-databases
 
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/mediapulse-app.yaml
 	@$(MAKE) wait-application APP=mediapulse-app
@@ -86,10 +91,10 @@ vault-up: ## Установить HashiCorp Vault и External Secrets Operator �
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/vault-app.yaml
 	@$(MAKE) wait-application APP=vault
 
-secrets-init: ## Инициализировать секреты в Vault и настроить SecretStore
+secrets-init: ## Инициализировать секреты в Vault
 	@echo "🔑 Запуск скрипта инициализации локальных секретов..."
-	@chmod +x ./scripts/init-local-secrets.sh
-	./scripts/init-local-secrets.sh
+	@chmod +x ./init-local-secrets.sh
+	./init-local-secrets.sh
 
 certificates-up: ## Установить cert-manager, локальный CA и выпустить TLS-сертификаты
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
