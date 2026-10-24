@@ -13,7 +13,7 @@ kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=180s
 
 CONNECTION_DEADLINE=$((SECONDS + CONNECT_TIMEOUT))
 while (( SECONDS < CONNECTION_DEADLINE )); do
-    if kubectl -n "$NAMESPACE" logs "deployment/$DEPLOYMENT" --since=90s |
+    if kubectl -n "$NAMESPACE" logs "deployment/$DEPLOYMENT" --tail=100 |
         grep -Eq 'Registered tunnel connection|Connection .*registered'; then
         echo "✅ Cloudflare Tunnel зарегистрирован из Kubernetes."
         exit 0
