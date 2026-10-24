@@ -6,16 +6,17 @@ ARGOCD_APP_TIMEOUT ?= 600s
 
 help: ## Показать список доступных команд
 	@echo "Доступные команды в mediapulse-infra:"
-	@echo "  make cluster-up              - Создать Kind-кластер"
-	@echo "  make cluster-down            - Удалить Kind-кластер"
-	@echo "  make cluster-status          - Проверить статус нод кластера"
-	@echo "  make helm-up                 - Установить Helm CLI"
-	@echo "  make argocd-up               - Установить Argo CD и последовательно приложения"
-	@echo "  make dashboard-up            - Проверить маршруты и вывести данные доступа"
-	@echo "  make certificates-up         - Установить cert-manager и выпустить локальные TLS-сертификаты"
+	@echo "  make cluster-up             - Создать Kind-кластер"
+	@echo "  make cluster-down           - Удалить Kind-кластер"
+	@echo "  make cluster-status         - Проверить статус нод кластера"
+	@echo "  make helm-up                - Установить Helm CLI"
+	@echo "  make argocd-up              - Установить Argo CD и последовательно приложения"
+	@echo "  make dashboard-up           - Проверить маршруты и вывести данные доступа"
+	@echo "  make certificates-up        - Установить cert-manager, локальный CA и выпустить TLS-сертификаты"
+	@echo "  make vault-up               - Установить HashiCorp Vault и External Secrets Operator"
+	@echo "  make secrets-init           - Заполнить локальные секреты в Vault скриптом"
 	@echo "  make traefik-https-proxy     - Опубликовать HTTPS Traefik на стандартном порту 443"
-	@echo "  make traefik-port-forward    - Совместимый псевдоним traefik-https-proxy"
-	@echo "  make all-up                  - Полный цикл: кластер -> helm -> argocd -> дашборды"
+	@echo "  make all-up                 - Полный цикл: кластер -> helm -> argocd -> vault -> секреты -> дашборды"
 
 cluster-up: ## Создать Kind-кластер, если он ещё не существует
 	@if kind get clusters | grep -Fxq mediapulse-cluster; then \
@@ -59,8 +60,16 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@$(MAKE) certificates-up
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/traefik-app.yaml
 	@$(MAKE) wait-application APP=traefik
+	
+	# Добавляем установку Vault и ESO
+	@$(MAKE) vault-up
+
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/databases-app.yaml
 	@$(MAKE) wait-application APP=mediapulse-databases
+	
+	# Инициализируем секреты в Vault после поднятия самого Vault
+	@$(MAKE) secrets-init
+
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/mediapulse-app.yaml
 	@$(MAKE) wait-application APP=mediapulse-app
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/kubernetes-dashboard-app.yaml
@@ -70,21 +79,29 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
 	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
 
-local-ca-up:
-	@bash ./setup-local-ca.sh
+vault-up: ## Установить HashiCorp Vault и External Secrets Operator через ArgoCD
+	@echo "🔒 Установка Vault и External Secrets Operator..."
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/external-secrets-app.yaml
+	@$(MAKE) wait-application APP=external-secrets
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/vault-app.yaml
+	@$(MAKE) wait-application APP=vault
 
-certificates-up: ## Установить cert-manager, локальный CA и сертификаты
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
+secrets-init: ## Инициализировать секреты в Vault и настроить SecretStore
+	@echo "🔑 Запуск скрипта инициализации локальных секретов..."
+	@chmod +x ./scripts/init-local-secrets.sh
+	./scripts/init-local-secrets.sh
+
+certificates-up: ## Установить cert-manager, локальный CA и выпустить TLS-сертификаты
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
 	@$(MAKE) wait-application APP=cert-manager
-	@$(MAKE) local-ca-up
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/certificates-app.yaml
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/local-ca-app.yaml
+	@$(MAKE) wait-application APP=local-ca
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/certificates-app.yaml
 	@$(MAKE) wait-application APP=certificates
-	@kubectl wait --for=condition=Ready certificate/argocd-local-tls -n argocd --timeout=180s
-	@kubectl wait --for=condition=Ready certificate/mediapulse-local-tls -n default --timeout=180s
-	@kubectl wait --for=condition=Ready certificate/traefik-local-tls -n traefik --timeout=180s
-	@kubectl wait --for=condition=Ready certificate/k8s-local-tls -n kubernetes-dashboard --timeout=180s
-	@kubectl wait --for=condition=Ready certificate/kubernetes-dashboard-internal-tls -n kubernetes-dashboard --timeout=180s
 
+local-ca-up: ## Поднять локальный CA (Job создаёт Secret mediapulse-local-ca) перед выпуском сертификатов
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/local-ca-app.yaml
+	@$(MAKE) wait-application APP=local-ca
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
 	@echo "⏳ Ожидание синхронизации и готовности Application $(APP)..."
@@ -122,8 +139,6 @@ traefik-https-proxy: ## Опубликовать HTTPS Traefik на станда
 			TCP-LISTEN:443,fork,reuseaddr TCP:$$TRAEFIK_IP:443; \
 	fi
 
-traefik-port-forward: traefik-https-proxy ## Совместимый псевдоним для публикации HTTPS на порту 443
-
 all-up: cluster-up helm-up argocd-up dashboard-up ## Полный идемпотентный цикл развертывания
-	@echo "🎉 Кластер, Argo CD и приложения успешно развернуты."
+	@echo "🎉 Кластер, Argo CD, Vault и приложения успешно развернуты."
 	@echo "   HTTPS доступен на стандартном порту 443; port-forward запускать не нужно."
