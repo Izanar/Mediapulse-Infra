@@ -20,37 +20,50 @@ kubectl rollout status deployment/vault -n vault --timeout=120s
 VAULT_POD=$(kubectl get pod -l app.kubernetes.io/name=vault -n vault -o jsonpath="{.items[0].metadata.name}")
 
 echo "📝 Запись секретов из локального .env в Vault..."
-kubectl exec -i "$VAULT_POD" -n vault -- sh -c "
-  export VAULT_ADDR='http://127.0.0.1:8200'
-  export VAULT_TOKEN='root'
-  
-  vault kv put secret/mediapulse \
-    postgres_server='$POSTGRES_SERVER' \
-    postgres_port='$POSTGRES_PORT' \
-    postgres_user='$POSTGRES_USER' \
-    postgres_password='$POSTGRES_PASSWORD' \
-    postgres_db='$POSTGRES_DB' \
-    redis_host='$REDIS_HOST' \
-    redis_port='$REDIS_PORT' \
-    secret_key='$SECRET_KEY' \
-    s3_endpoint_url='$S3_ENDPOINT_URL' \
-    s3_access_key='$S3_ACCESS_KEY' \
-    s3_secret_key='$S3_SECRET_KEY' \
-    s3_bucket_name='$S3_BUCKET_NAME'
+python3 - <<'PY' | kubectl exec -i "$VAULT_POD" -n vault -- sh -c '
+set -eu
+umask 077
+secret_file=/tmp/mediapulse-secrets.json
+trap "rm -f $secret_file" EXIT
+cat > "$secret_file"
 
-  vault policy write mediapulse-eso - <<'POLICY'
-path \"secret/data/mediapulse\" {
-  capabilities = [\"read\"]
+export VAULT_ADDR="http://127.0.0.1:8200"
+export VAULT_TOKEN="root"
+vault kv put secret/mediapulse "@$secret_file"
+
+vault policy write mediapulse-eso - <<POLICY
+path "secret/data/mediapulse" {
+  capabilities = ["read"]
 }
 POLICY
-"
+'
+import json
+import os
+import sys
+
+keys = (
+    "POSTGRES_SERVER",
+    "POSTGRES_PORT",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_DB",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "SECRET_KEY",
+    "S3_ENDPOINT_URL",
+    "S3_ACCESS_KEY",
+    "S3_SECRET_KEY",
+    "S3_BUCKET_NAME",
+)
+json.dump({key.lower(): os.environ[key] for key in keys}, sys.stdout)
+PY
 
 echo "🔑 Создание ограниченного токена для External Secrets Operator..."
-ESO_TOKEN="$(kubectl exec "$VAULT_POD" -n vault -- sh -c "
-  export VAULT_ADDR='http://127.0.0.1:8200'
-  export VAULT_TOKEN='root'
+ESO_TOKEN="$(kubectl exec "$VAULT_POD" -n vault -- sh -c '
+  export VAULT_ADDR="http://127.0.0.1:8200"
+  export VAULT_TOKEN="root"
   vault token create -orphan -no-default-policy -policy=mediapulse-eso -ttl=720h -field=token
-")"
+')"
 
 printf '%s' "$ESO_TOKEN" | kubectl create secret generic vault-token \
     --namespace=default \
