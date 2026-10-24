@@ -80,6 +80,74 @@ revoke_temporary_root() {
 }
 trap revoke_temporary_root EXIT
 
+ensure_kv_v2_mount() {
+    local mounts mount_info
+    mounts="$(vault_exec_with_token "$ROOT_TOKEN" secrets list -format=json)"
+    mount_info="$(printf '%s' "$mounts" | python3 -c '
+import json,sys
+mounts=json.load(sys.stdin)
+mount=mounts.get("secret/")
+if mount is None:
+    print("missing")
+else:
+    print("{}:{}".format(mount.get("type",""), mount.get("options",{}).get("version","")))
+')"
+    case "$mount_info" in
+        missing)
+            vault_exec_with_token "$ROOT_TOKEN" secrets enable -path=secret kv-v2
+            ;;
+        kv:2)
+            ;;
+        *)
+            echo "❌ Vault mount secret/ должен быть KV v2; обнаружено: $mount_info" >&2
+            return 1
+            ;;
+    esac
+}
+
+generate_temporary_root() {
+    local init_json nonce otp key response encoded_token
+    if [ ! -s "$STATE_DIR/unseal-key" ]; then
+        echo "❌ Для восстановления временного root-токена не найден unseal-ключ: $STATE_DIR/unseal-key" >&2
+        return 1
+    fi
+
+    echo "🔐 KV engine отсутствует; временно восстанавливаю root-доступ unseal-ключом..."
+    init_json="$(kubectl exec "$POD_NAME" -n "$NAMESPACE" -- sh -c \
+        'VAULT_ADDR="http://127.0.0.1:8200" vault operator generate-root -init -format=json')"
+    nonce="$(printf '%s' "$init_json" | python3 -c \
+        'import json,sys; print(json.load(sys.stdin)["nonce"])')"
+    otp="$(printf '%s' "$init_json" | python3 -c \
+        'import json,sys; print(json.load(sys.stdin)["otp"])')"
+    unset init_json
+
+    key="$(<"$STATE_DIR/unseal-key")"
+    response="$(printf '%s\n' "$key" | kubectl exec -i "$POD_NAME" -n "$NAMESPACE" -- sh -c '
+        IFS= read -r key || exit 1
+        VAULT_ADDR="http://127.0.0.1:8200" vault operator generate-root -format=json -nonce="$1" "$key"
+    ' mediapulse-root "$nonce")"
+    unset key nonce
+    encoded_token="$(printf '%s' "$response" | python3 -c \
+        'import json,sys; print(json.load(sys.stdin)["encoded_token"])')"
+    unset response
+
+    ROOT_TOKEN="$(
+        {
+            printf '%s\n' "$encoded_token"
+            printf '%s\n' "$otp"
+        } | kubectl exec -i "$POD_NAME" -n "$NAMESPACE" -- sh -c '
+            IFS= read -r encoded_token || exit 1
+            IFS= read -r otp || exit 1
+            VAULT_ADDR="http://127.0.0.1:8200" vault operator generate-root -decode=- -otp="$otp"
+        '
+    )"
+    unset encoded_token otp
+    if [ -z "$ROOT_TOKEN" ]; then
+        echo "❌ Vault не вернул временный root-токен." >&2
+        return 1
+    fi
+}
+
 echo "⏳ Ожидание запуска Vault pod..."
 kubectl wait --for=jsonpath='{.status.phase}'=Running "pod/$POD_NAME" \
     -n "$NAMESPACE" --timeout=600s
@@ -111,6 +179,8 @@ if [ "$INITIALIZED" = false ]; then
         VAULT_ADDR="http://127.0.0.1:8200" vault operator unseal "$key" >/dev/null
     '
     unset UNSEAL_KEY
+
+    ensure_kv_v2_mount
 
     ESO_POLICY='path "secret/data/mediapulse" { capabilities = ["read"] }'
     PROVISIONER_POLICY='path "secret/data/mediapulse" { capabilities = ["create", "update"] }'
@@ -201,9 +271,10 @@ kubectl create secret generic vault-approle \
     --dry-run=client -o yaml | kubectl apply -f -
 
 echo "📝 Запись секретов из .env в Vault..."
-{
-    printf '%s\n' "$PROVISIONER_TOKEN"
-    python3 - <<'PY'
+write_secret_to_vault() {
+    {
+        printf '%s\n' "$PROVISIONER_TOKEN"
+        python3 - <<'PY'
 import json
 import os
 import sys
@@ -222,18 +293,36 @@ keys = (
     "S3_SECRET_KEY",
     "S3_BUCKET_NAME",
 )
-json.dump({key.lower(): os.environ[key] for key in keys}, sys.stdout)
+json.dump({"data": {key.lower(): os.environ[key] for key in keys}}, sys.stdout)
 PY
-} | kubectl exec -i "$POD_NAME" -n "$NAMESPACE" -- sh -c '
-    IFS= read -r VAULT_TOKEN || exit 1
-    export VAULT_TOKEN
-    export VAULT_ADDR="http://127.0.0.1:8200"
-    umask 077
-    secret_file=$(mktemp)
-    trap "rm -f \"$secret_file\"" EXIT
-    cat > "$secret_file"
-    vault kv put secret/mediapulse "@$secret_file"
-'
+    } | kubectl exec -i "$POD_NAME" -n "$NAMESPACE" -- sh -c '
+        IFS= read -r VAULT_TOKEN || exit 1
+        export VAULT_TOKEN
+        export VAULT_ADDR="http://127.0.0.1:8200"
+        umask 077
+        secret_file=$(mktemp)
+        trap "rm -f \"$secret_file\"" EXIT
+        cat > "$secret_file"
+        vault write secret/data/mediapulse "@$secret_file"
+    '
+}
+if ! WRITE_OUTPUT="$(write_secret_to_vault 2>&1)"; then
+    if [[ "$WRITE_OUTPUT" == *'no handler for route "secret/data/mediapulse"'* ]]; then
+        generate_temporary_root
+        ensure_kv_v2_mount
+        vault_exec_with_token "$ROOT_TOKEN" token revoke -self >/dev/null
+        ROOT_TOKEN=
+        if ! WRITE_OUTPUT="$(write_secret_to_vault 2>&1)"; then
+            printf '%s\n' "$WRITE_OUTPUT" >&2
+            exit 1
+        fi
+    else
+        printf '%s\n' "$WRITE_OUTPUT" >&2
+        exit 1
+    fi
+fi
+printf '%s\n' "$WRITE_OUTPUT"
+unset WRITE_OUTPUT
 unset PROVISIONER_TOKEN
 
 if [ -n "$ROOT_TOKEN" ]; then

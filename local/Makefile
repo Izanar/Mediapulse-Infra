@@ -92,7 +92,7 @@ vault-up: ## Установить HashiCorp Vault и External Secrets Operator �
 
 secrets-init: ## Инициализировать секреты в Vault
 	@echo "🔐 Инициализация Vault и загрузка локальных секретов..."
-	./init-local-secrets.sh
+	bash ./init-local-secrets.sh
 
 certificates-up: ## Установить cert-manager, локальный CA и выпустить TLS-сертификаты
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cert-manager-app.yaml
