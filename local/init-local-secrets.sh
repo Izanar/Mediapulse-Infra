@@ -121,22 +121,19 @@ generate_temporary_root() {
         'import json,sys; print(json.load(sys.stdin)["otp"])')"
     unset init_json
 
-    key="$(<"$STATE_DIR/unseal-key")"
-    response="$(printf '%s\n' "$key" | kubectl exec -i "$POD_NAME" -n "$NAMESPACE" -- sh -c '
-        IFS= read -r key || exit 1
-        VAULT_ADDR="http://127.0.0.1:8200" vault operator generate-root -format=json -nonce="$1" "$key"
-    ' mediapulse-root "$nonce")"
-    unset key nonce
+    response="$(kubectl exec -i "$POD_NAME" -n "$NAMESPACE" -- sh -c '
+        VAULT_ADDR="http://127.0.0.1:8200" vault operator generate-root -format=json -nonce="$1" -
+    ' mediapulse-root "$nonce" < "$STATE_DIR/unseal-key")"
+    unset nonce
     encoded_token="$(printf '%s' "$response" | python3 -c \
         'import json,sys; print(json.load(sys.stdin)["encoded_token"])')"
     unset response
 
     ROOT_TOKEN="$(
         {
-            printf '%s\n' "$encoded_token"
             printf '%s\n' "$otp"
+            printf '%s\n' "$encoded_token"
         } | kubectl exec -i "$POD_NAME" -n "$NAMESPACE" -- sh -c '
-            IFS= read -r encoded_token || exit 1
             IFS= read -r otp || exit 1
             VAULT_ADDR="http://127.0.0.1:8200" vault operator generate-root -decode=- -otp="$otp"
         '
@@ -194,7 +191,8 @@ if [ "$INITIALIZED" = false ]; then
 
     ensure_kv_v2_mount
 
-    ESO_POLICY='path "secret/data/mediapulse" { capabilities = ["read"] }'
+    ESO_POLICY='path "secret/data/mediapulse" { capabilities = ["read"] }
+path "auth/token/lookup-self" { capabilities = ["read"] }'
     PROVISIONER_POLICY='path "secret/data/mediapulse" { capabilities = ["create", "update"] }'
     vault_write_policy "$ROOT_TOKEN" mediapulse-eso "$ESO_POLICY"
     vault_write_policy "$ROOT_TOKEN" mediapulse-provisioner "$PROVISIONER_POLICY"
