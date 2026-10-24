@@ -24,23 +24,14 @@ kubectl -n argocd get ingress argocd-server-ingress
 kubectl -n traefik get ingressroute traefik-dashboard
 kubectl -n kubernetes-dashboard get ingressroute k8s-dashboard-ingress
 
-# 3. Ждём, пока Traefik получит IP origin для Cloudflare Tunnel.
-echo "⏳ Ожидание внешнего IP у сервиса Traefik (MetalLB)..."
-TRAEFIK_IP=$(kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-for _ in $(seq 1 60); do
-    if [ -n "$TRAEFIK_IP" ]; then
-        echo "✅ Traefik IP: $TRAEFIK_IP"
-        break
-    fi
-    sleep 3
-    TRAEFIK_IP=$(kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-done
-if [ -z "$TRAEFIK_IP" ]; then
-    echo "❌ У сервиса Traefik не появился IP MetalLB за 180 секунд." >&2
+# 3. Проверяем, что Traefik доступен только как внутренний Kubernetes Service.
+echo "⏳ Проверка внутреннего ClusterIP-сервиса Traefik..."
+TRAEFIK_SERVICE_TYPE=$(kubectl get svc -n traefik traefik -o jsonpath='{.spec.type}')
+if [ "$TRAEFIK_SERVICE_TYPE" != "ClusterIP" ]; then
+    echo "❌ Сервис Traefik должен быть ClusterIP; обнаружено: $TRAEFIK_SERVICE_TYPE" >&2
     exit 1
 fi
-curl --fail --silent --show-error --max-time 5 \
-    -H "Host: $MEDIAPULSE_HOST" "http://$TRAEFIK_IP/" >/dev/null
+echo "✅ Traefik доступен Cloudflare Tunnel внутри кластера."
 
 # 4. Вывод учетных данных
 echo "🔑 Данные для доступа:"
@@ -62,7 +53,7 @@ echo "      https://$KIND_HOST/         (Kubernetes Dashboard; требуетс�
 echo "      https://$MEDIAPULSE_HOST/   (Mediapulse)"
 echo "      https://$TRAEFIK_HOST/dashboard/ (Traefik UI; требуется Cloudflare Access)"
 echo ""
-echo "Cloudflare Tunnel направляется на HTTP origin Traefik $TRAEFIK_IP:80."
+echo "Cloudflare Tunnel направляется на http://traefik.traefik.svc.cluster.local:80."
 echo "Cloudflare Tunnel запускается командой: make cloudflare-tunnel-up"
 
 echo "================================================================"

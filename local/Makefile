@@ -14,7 +14,7 @@ help: ## Показать список доступных команд
 	@echo "  make dashboard-up           - Проверить маршруты и вывести данные доступа"
 	@echo "  make vault-up               - Установить HashiCorp Vault и External Secrets Operator"
 	@echo "  make secrets-init           - Заполнить локальные секреты в Vault скриптом"
-	@echo "  make cloudflare-tunnel-up   - Запустить Cloudflare Tunnel с локальным token-файлом"
+	@echo "  make cloudflare-tunnel-up   - Проверить Cloudflare Tunnel в Kubernetes"
 	@echo "  make all-up                 - Полный цикл: кластер -> приложения -> Cloudflare Tunnel"
 
 cluster-up: ## Создать Kind-кластер, если он ещё не существует
@@ -54,8 +54,6 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 
 	@echo "🔄 Последовательная регистрация инфраструктурных приложений в Argo CD..."
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/metallb-app.yaml
-	@$(MAKE) wait-application APP=metallb
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/traefik-app.yaml
 	@$(MAKE) wait-application APP=traefik
 	
@@ -74,6 +72,10 @@ argocd-up: ## Установить ArgoCD и применить корневой
 	@$(MAKE) wait-application APP=mediapulse-app
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/kubernetes-dashboard-app.yaml
 	@$(MAKE) wait-application APP=kubernetes-dashboard
+
+	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cloudflare-tunnel-app.yaml
+	@$(MAKE) wait-application-synced APP=cloudflare-tunnel
+	@$(MAKE) wait-application APP=cloudflare-tunnel
 
 	@echo "🔄 Передача управления Application-манифестами корневому App of Apps..."
 	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
@@ -114,7 +116,9 @@ dashboard-up: ## Запустить скрипт настройки маршру
 	@chmod +x ./dev-dashboard.sh
 	./dev-dashboard.sh
 
-cloudflare-tunnel-up: ## Запустить удалённо управляемый Cloudflare Tunnel
+cloudflare-tunnel-up: ## Проверить удалённо управляемый Cloudflare Tunnel в Kubernetes
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cloudflare-tunnel-app.yaml
+	@$(MAKE) wait-application-synced APP=cloudflare-tunnel
 	@bash ./cloudflare-tunnel-up.sh
 
 all-up: cluster-up helm-up argocd-up dashboard-up cloudflare-tunnel-up ## Полный идемпотентный цикл развертывания

@@ -5,8 +5,6 @@ umask 077
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_PATH="$SCRIPT_DIR/../../Mediapulse-App/.env"
 STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mediapulse/vault"
-CLOUDFLARE_STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mediapulse/cloudflare"
-CLOUDFLARE_TOKEN_FILE="$CLOUDFLARE_STATE_DIR/tunnel-token"
 NAMESPACE=vault
 POD_NAME=vault-0
 ROOT_TOKEN=
@@ -78,20 +76,6 @@ write_private_file() {
     chmod 600 "$temporary"
     mv -f "$temporary" "$path"
 }
-
-if [ -L "$CLOUDFLARE_STATE_DIR" ]; then
-    echo "❌ Каталог Cloudflare state не должен быть символической ссылкой: $CLOUDFLARE_STATE_DIR" >&2
-    exit 1
-fi
-if [ -L "$CLOUDFLARE_TOKEN_FILE" ]; then
-    echo "❌ Tunnel token не должен быть символической ссылкой: $CLOUDFLARE_TOKEN_FILE" >&2
-    exit 1
-fi
-install -d -m 700 "$CLOUDFLARE_STATE_DIR"
-chmod 700 "$CLOUDFLARE_STATE_DIR"
-write_private_file "$CLOUDFLARE_TOKEN_FILE" "$CLOUDFLARE_TUNNEL_TOKEN"
-unset CLOUDFLARE_TUNNEL_TOKEN
-echo "🔐 Cloudflare Tunnel token сохранён вне Git в $CLOUDFLARE_TOKEN_FILE (права 0600)."
 
 revoke_temporary_root() {
     if [ -n "$ROOT_TOKEN" ]; then
@@ -323,6 +307,7 @@ keys = (
     "S3_ACCESS_KEY",
     "S3_SECRET_KEY",
     "S3_BUCKET_NAME",
+    "CLOUDFLARE_TUNNEL_TOKEN",
 )
 json.dump({"data": {key.lower(): os.environ[key] for key in keys}}, sys.stdout)
 PY

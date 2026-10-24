@@ -24,8 +24,8 @@ make all-up
 1. Создаёт Kind-кластер, если его ещё нет.
 2. Проверяет наличие Helm.
 3. Устанавливает Argo CD без зависимости от ещё не установленного Traefik.
-4. Через Argo CD разворачивает MetalLB, Traefik, Vault и External Secrets
-   Operator. Загружает секреты из `.env` в Vault,
+4. Через Argo CD разворачивает Traefik, Vault и External Secrets Operator.
+   Загружает секреты из `.env` в Vault,
    создаёт из них Kubernetes Secret, и только затем запускает базы и приложение.
    В конце разворачивает Kubernetes Dashboard.
    Vault работает в одноузловом Raft-режиме с PVC. При первом запуске
@@ -42,8 +42,8 @@ make all-up
    Kind PVC; удаление кластера удалит данные Vault. Unseal-конфигурация 1-of-1
    и plaintext bootstrap credential на хосте выбраны ради автоматического
    локального запуска и не подходят для production.
-5. Передаёт Application-манифесты под управление `root-app`, проверяет HTTP
-   origin Traefik и выводит данные для доступа.
+5. Передаёт Application-манифесты под управление `root-app`, запускает
+   Cloudflare Tunnel connector в Kubernetes и выводит данные для доступа.
 
 ### 📋 Доступные команды (Makefile)
 
@@ -71,10 +71,10 @@ make help
 
 1. В аккаунте уже настроен remotely-managed Tunnel
    `ALbert-mediapulse-cluster-tunnel`. Для него созданы Published application
-   routes и DNS-записи для четырёх hostname ниже. Origin каждого route —
-   `http://172.18.255.10:80` (Traefik LoadBalancer в локальном Kind); HTTPS
-   завершается на Cloudflare. Локальный CA, cert-manager и прокси для HTTPS
-   origin не нужны.
+   routes и DNS-записи для четырёх hostname ниже. Для каждого route укажите
+   origin `http://traefik.traefik.svc.cluster.local:80`; connector в Kubernetes
+   разрешает это внутреннее имя. Внешний IP, MetalLB, NodePort и проброс
+   портов на роутере не нужны. HTTPS для посетителей завершается на Cloudflare.
 2. Cloudflare Access application `MediaPulse Admin Interfaces` защищает
    `argocd.izanar.dev`, `kind.izanar.dev` и `traefik.izanar.dev` политикой
    **Allow** только для настроенного адреса владельца. Не публикуйте
@@ -84,18 +84,19 @@ make help
    значением connector token из Tunnel Dashboard. Добавьте строку из
    `.env.example`, затем вставьте token локально. Не передавайте его в чат и
    не коммитьте: `.env` игнорируется Git. Во время `make all-up` скрипт
-   `init-local-secrets.sh` атомарно перенесёт его в
-   `~/.config/mediapulse/cloudflare/tunnel-token` с правами `0600`; token не
-   сохраняется в Vault или Kubernetes:
+   `init-local-secrets.sh` запишет его в Vault рядом с остальными локальными
+   секретами. External Secrets Operator создаст Kubernetes Secret, который
+   монтируется в Pod `cloudflared`; token не помещается в Git, а временный
+   root-токен Vault отзывается после bootstrap:
 
    ```bash
    cp -n ../../Mediapulse-App/.env.example ../../Mediapulse-App/.env
    # В .env установите CLOUDFLARE_TUNNEL_TOKEN=<connector-token>
    ```
 
-После этого `make all-up` запустит connector контейнер `cloudflare/cloudflared`
-после готовности кластера, а `make cloudflare-tunnel-up` можно использовать
-для повторного запуска. Публичные адреса:
+После этого `make all-up` запустит connector Pod `cloudflare/cloudflared` в
+кластере, а `make cloudflare-tunnel-up` можно использовать для повторной
+проверки и запуска. Публичные адреса:
 
 | Сервис | URL | Защита |
 | --- | --- | --- |
@@ -104,11 +105,10 @@ make help
 | Traefik Dashboard | `https://traefik.izanar.dev/dashboard/` | Cloudflare Access |
 | Kubernetes Dashboard | `https://kind.izanar.dev/` | Cloudflare Access и токен Dashboard |
 
-Cloudflare Tunnel маршрутизирует origin напрямую на HTTP-порт Traefik
-`172.18.255.10:80`; исходное имя хоста используется Traefik для выбора сервиса.
-TLS от браузера до Cloudflare и исходящее соединение Tunnel до Cloudflare
-остаются зашифрованными. Между connector и локальным Kind используется HTTP
-только по частной Docker-сети хоста.
+Cloudflare Tunnel маршрутизирует origin на внутренний HTTP Service
+`traefik.traefik.svc.cluster.local:80`; исходное имя хоста используется Traefik
+для выбора сервиса. Публичный TLS заканчивается на Cloudflare, а connector
+устанавливает только исходящие соединения с Cloudflare.
 
 
 
