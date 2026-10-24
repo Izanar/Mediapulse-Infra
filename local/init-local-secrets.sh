@@ -148,6 +148,18 @@ generate_temporary_root() {
     fi
 }
 
+echo "⏳ Ожидание создания Vault pod..."
+POD_CREATE_DEADLINE=$((SECONDS + 600))
+until kubectl get pod "$POD_NAME" -n "$NAMESPACE" >/dev/null 2>&1; do
+    if (( SECONDS >= POD_CREATE_DEADLINE )); then
+        echo "❌ Pod $POD_NAME не был создан за 600 секунд. Состояние StatefulSet Vault:" >&2
+        kubectl get statefulset vault -n "$NAMESPACE" -o wide >&2 || true
+        kubectl get events -n "$NAMESPACE" --sort-by=.lastTimestamp >&2 || true
+        exit 1
+    fi
+    sleep 2
+done
+
 echo "⏳ Ожидание запуска Vault pod..."
 kubectl wait --for=jsonpath='{.status.phase}'=Running "pod/$POD_NAME" \
     -n "$NAMESPACE" --timeout=600s
