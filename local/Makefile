@@ -93,7 +93,7 @@ wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
 	@echo "⏳ [$(APP)] Ожидание синхронизации и готовности..."
 	@$(MAKE) --no-print-directory wait-application-synced APP=$(APP)
-	@started_at=$$(date +%s); deadline=$$((started_at + $${ARGOCD_APP_TIMEOUT%s})); \
+	@started_at=$$(date +%s); deadline=$$((started_at + $(subst s,,$(ARGOCD_APP_TIMEOUT)))); \
 	while true; do \
 		health=$$(kubectl -n argocd get application $(APP) -o jsonpath='{.status.health.status}' 2>/dev/null || true); \
 		if [ "$$health" = "Healthy" ]; then echo "✅ [$(APP)] Healthy ($$(( $$(date +%s) - started_at ))s)"; break; fi; \
@@ -107,7 +107,7 @@ wait-application:
 
 wait-application-synced:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application-synced APP=vault"; exit 1; }
-	@started_at=$$(date +%s); deadline=$$((started_at + $${ARGOCD_APP_TIMEOUT%s})); \
+	@started_at=$$(date +%s); deadline=$$((started_at + $(subst s,,$(ARGOCD_APP_TIMEOUT)))); \
 	while true; do \
 		status=$$(kubectl -n argocd get application $(APP) -o jsonpath='{.status.sync.status}' 2>/dev/null || true); \
 		health=$$(kubectl -n argocd get application $(APP) -o jsonpath='{.status.health.status}' 2>/dev/null || true); \
