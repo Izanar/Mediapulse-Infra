@@ -1,6 +1,6 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
-ARGOCD_STATUS_INTERVAL ?= 10
+ARGOCD_STATUS_INTERVAL ?= 5
 PUBLIC_URL ?= https://mediapulse.izanar.dev/
 PUBLIC_CHECK_TIMEOUT ?= 180
 
@@ -20,6 +20,7 @@ help: ## Показать список доступных команд
 cluster-up: ## Создать Kind-кластер, если он ещё не существует
 	@echo ""
 	@echo "▶ [1/6] Создание Kind-кластера..."
+	@echo "   ℹ️  Первый запуск может занять 2-5 минут (загрузка образов). Повторный — обычно <1 минуты."
 	@if kind get clusters | grep -Fxq mediapulse-cluster; then \
 		echo "✅ Кластер mediapulse-cluster уже существует; обновляю kubeconfig."; \
 		kind export kubeconfig --name mediapulse-cluster; \
@@ -61,8 +62,8 @@ argocd-install: ## Установить только Argo CD (Helm)
 	@command -v helm >/dev/null 2>&1 || { echo "❌ Helm не найден. Выполни: make helm-up"; exit 1; }
 	@test -f $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml || { echo "❌ Не найден файл $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml"; exit 1; }
 	@kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
-	helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm --version 7.0.0 \
-		--namespace argocd --values $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml
+	@helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm --version 7.0.0 \
+		--namespace argocd --values $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml > /tmp/mediapulse-argocd-helm.log 2>&1 || { echo "❌ Helm install failed:"; cat /tmp/mediapulse-argocd-helm.log; exit 1; }
 	@echo "⏳ Ожидание запуска ArgoCD API сервер..."
 	@kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 
@@ -132,17 +133,20 @@ vault-secrets: ## Дождаться инициализации Vault
 		exit 1; \
 	}
 	@echo "✅ Vault инициализирован"
+	@echo "🔄 Перезапуск Pod'ов, которым нужны секреты из Vault..."
+	@kubectl rollout restart deployment/cloudflare-tunnel -n default >/dev/null 2>&1 || true
+	@kubectl rollout restart deployment/mediapulse-api deployment/mediapulse-worker -n default >/dev/null 2>&1 || true
 
 apps-up: ## Дождаться готовности всех прикладных приложений (через ArgoCD)
 	@echo ""
 	@echo "▶ [6/6] Ожидание готовности приложений..."
-	@$(MAKE) --no-print-directory wait-application APP=mediapulse-databases
-	@$(MAKE) --no-print-directory wait-application APP=mediapulse-app
-	@echo "   Ожидание Kubernetes Dashboard и Cloudflare Tunnel (параллельно)..."
+	@echo "   Ожидание всех приложений параллельно..."
 	@set -e; \
-	$(MAKE) --no-print-directory wait-application APP=kubernetes-dashboard & dashboard_pid=$$!; \
+	$(MAKE) --no-print-directory wait-application APP=mediapulse-databases & db_pid=$$!; \
+	$(MAKE) --no-print-directory wait-application APP=mediapulse-app & app_pid=$$!; \
+	$(MAKE) --no-print-directory wait-application APP=kubernetes-dashboard & dash_pid=$$!; \
 	$(MAKE) --no-print-directory wait-application APP=cloudflare-tunnel & tunnel_pid=$$!; \
-	wait $$dashboard_pid; wait $$tunnel_pid
+	wait $$db_pid; wait $$app_pid; wait $$dash_pid; wait $$tunnel_pid
 
 public-check: ## Проверить доступность приложения через публичный HTTPS
 	@echo "🌐 Проверка публичного HTTPS: $(PUBLIC_URL)"
