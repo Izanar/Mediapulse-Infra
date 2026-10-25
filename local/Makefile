@@ -1,5 +1,6 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
+ARGOCD_STATUS_INTERVAL ?= 10
 PUBLIC_URL ?= https://mediapulse.izanar.dev/
 PUBLIC_CHECK_TIMEOUT ?= 180
 
@@ -81,28 +82,43 @@ argocd-up: ## Применить корневой App-of-Apps (управляе�
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
 	@$(MAKE) --no-print-directory wait-application-synced APP=root-app
 	@echo "✅ root-app применён. ArgoCD синхронизирует все дочерние Application."
-	@echo "   Ожидание готовности Vault, External Secrets и Image Updater..."
-	@$(MAKE) --no-print-directory wait-application APP=vault
-	@$(MAKE) --no-print-directory wait-application APP=external-secrets
-	@$(MAKE) --no-print-directory wait-application APP=argocd-image-updater
+	@echo "   Ожидание готовности Vault, External Secrets и Image Updater (параллельно)..."
+	@set -e; \
+	$(MAKE) --no-print-directory wait-application APP=vault & vault_pid=$$!; \
+	$(MAKE) --no-print-directory wait-application APP=external-secrets & external_secrets_pid=$$!; \
+	$(MAKE) --no-print-directory wait-application APP=argocd-image-updater & image_updater_pid=$$!; \
+	wait $$vault_pid; wait $$external_secrets_pid; wait $$image_updater_pid
 
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
 	@echo "⏳ [$(APP)] Ожидание синхронизации и готовности..."
 	@$(MAKE) --no-print-directory wait-application-synced APP=$(APP)
-	@kubectl -n argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
-		echo "❌ Application $(APP) не стало Healthy. Диагностика:"; \
-		kubectl -n argocd describe application $(APP); \
-		exit 1; \
-	}
+	@started_at=$$(date +%s); deadline=$$((started_at + $${ARGOCD_APP_TIMEOUT%s})); \
+	while true; do \
+		health=$$(kubectl -n argocd get application $(APP) -o jsonpath='{.status.health.status}' 2>/dev/null || true); \
+		if [ "$$health" = "Healthy" ]; then echo "✅ [$(APP)] Healthy ($$(( $$(date +%s) - started_at ))s)"; break; fi; \
+		if [ $$(date +%s) -ge $$deadline ]; then \
+			echo "❌ Application $(APP) не стало Healthy за $(ARGOCD_APP_TIMEOUT). Диагностика:"; \
+			kubectl -n argocd describe application $(APP); exit 1; \
+		fi; \
+		echo "   [$(APP)] sync=Synced health=$${health:-Unknown}; повтор через $(ARGOCD_STATUS_INTERVAL)с"; \
+		sleep $(ARGOCD_STATUS_INTERVAL); \
+	done
 
 wait-application-synced:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application-synced APP=vault"; exit 1; }
-	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
-		echo "❌ Application $(APP) не синхронизировалось. Диагностика:"; \
-		kubectl -n argocd describe application $(APP); \
-		exit 1; \
-	}
+	@started_at=$$(date +%s); deadline=$$((started_at + $${ARGOCD_APP_TIMEOUT%s})); \
+	while true; do \
+		status=$$(kubectl -n argocd get application $(APP) -o jsonpath='{.status.sync.status}' 2>/dev/null || true); \
+		health=$$(kubectl -n argocd get application $(APP) -o jsonpath='{.status.health.status}' 2>/dev/null || true); \
+		if [ "$$status" = "Synced" ]; then echo "✅ [$(APP)] Synced ($$(( $$(date +%s) - started_at ))s)"; break; fi; \
+		if [ $$(date +%s) -ge $$deadline ]; then \
+			echo "❌ Application $(APP) не синхронизировалось за $(ARGOCD_APP_TIMEOUT). Диагностика:"; \
+			kubectl -n argocd describe application $(APP); exit 1; \
+		fi; \
+		echo "   [$(APP)] sync=$${status:-NotFound} health=$${health:-Unknown}; повтор через $(ARGOCD_STATUS_INTERVAL)с"; \
+		sleep $(ARGOCD_STATUS_INTERVAL); \
+	done
 
 vault-secrets: ## Дождаться инициализации Vault
 	@echo ""
@@ -122,8 +138,11 @@ apps-up: ## Дождаться готовности всех прикладны�
 	@echo "▶ [6/6] Ожидание готовности приложений..."
 	@$(MAKE) --no-print-directory wait-application APP=mediapulse-databases
 	@$(MAKE) --no-print-directory wait-application APP=mediapulse-app
-	@$(MAKE) --no-print-directory wait-application APP=kubernetes-dashboard
-	@$(MAKE) --no-print-directory wait-application APP=cloudflare-tunnel
+	@echo "   Ожидание Kubernetes Dashboard и Cloudflare Tunnel (параллельно)..."
+	@set -e; \
+	$(MAKE) --no-print-directory wait-application APP=kubernetes-dashboard & dashboard_pid=$$!; \
+	$(MAKE) --no-print-directory wait-application APP=cloudflare-tunnel & tunnel_pid=$$!; \
+	wait $$dashboard_pid; wait $$tunnel_pid
 
 public-check: ## Проверить доступность приложения через публичный HTTPS
 	@echo "🌐 Проверка публичного HTTPS: $(PUBLIC_URL)"
