@@ -67,19 +67,10 @@ argocd-up: ## Применить корневой App-of-Apps (управляе�
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
 	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
 	@echo "✅ root-app применён. ArgoCD синхронизирует все дочерние Application."
-
-infra-up: ## Дождаться готовности инфраструктуры (Traefik, Vault, External Secrets)
 	@echo "⏳ Ожидание готовности инфраструктурных приложений..."
 	@$(MAKE) wait-application APP=traefik
 	@$(MAKE) wait-application APP=vault
 	@$(MAKE) wait-application APP=external-secrets
-
-apps-up: ## Дождаться готовности приложений (Бэкенд, БД, Дашборд, Туннель)
-	@echo "⏳ Ожидание готовности прикладных приложений..."
-	@$(MAKE) wait-application APP=mediapulse-databases
-	@$(MAKE) wait-application APP=mediapulse-app
-	@$(MAKE) wait-application APP=kubernetes-dashboard
-	@$(MAKE) wait-application APP=cloudflare-tunnel
 
 secrets-init: ## Загрузить секреты из .env в Vault через Kubernetes Job
 	@test -f ../../Mediapulse-App/.env || { echo "❌ Файл .env не найден: ../../Mediapulse-App/.env"; exit 1; }
@@ -99,6 +90,11 @@ secrets-init: ## Загрузить секреты из .env в Vault через
 		exit 1; \
 	}
 	@echo "✅ Секреты загружены в Vault"
+	@echo "⏳ Ожидание готовности прикладных приложений..."
+	@$(MAKE) wait-application APP=mediapulse-databases
+	@$(MAKE) wait-application APP=mediapulse-app
+	@$(MAKE) wait-application APP=kubernetes-dashboard
+	@$(MAKE) wait-application APP=cloudflare-tunnel
 
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
@@ -128,6 +124,6 @@ cloudflare-tunnel-up: ## Проверить удалённо управляем�
 	@$(MAKE) wait-application-synced APP=cloudflare-tunnel
 	@bash ./cloudflare-tunnel-up.sh
 
-all-up: cluster-up helm-up argocd-install argocd-up infra-up secrets-init apps-up dashboard-up cloudflare-tunnel-up ## Полный идемпотентный цикл развертывания
+all-up: cluster-up helm-up argocd-install argocd-up secrets-init dashboard-up ## Полный идемпотентный цикл развертывания
 	@echo "🎉 Кластер, Argo CD, Vault и приложения успешно развернуты."
 	@echo "   Публичный HTTPS доступен через Cloudflare Tunnel."
