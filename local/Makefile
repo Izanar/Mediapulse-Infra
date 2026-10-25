@@ -25,6 +25,14 @@ cluster-up: ## Создать Kind-кластер, если он ещё не с�
 		echo "🚀 Запуск Kind-кластера mediapulse-cluster..."; \
 		kind create cluster --config ./kind-config.yaml; \
 	fi
+	@echo "🔧 Настройка лимита inotify для kube-proxy..."
+	@docker exec mediapulse-cluster-control-plane sysctl -w fs.inotify.max_user_instances=1024
+	@unready_pods=$$(kubectl -n kube-system get pods -l k8s-app=kube-proxy --no-headers | awk '$$2 != "1/1" {print $$1}'); \
+	if [ -n "$$unready_pods" ]; then \
+		echo "🔄 Перезапуск неготовых kube-proxy pods..."; \
+		echo "$$unready_pods" | xargs -r kubectl -n kube-system delete pod --wait=false; \
+	fi
+	@kubectl -n kube-system rollout status daemonset/kube-proxy --timeout=180s
 
 cluster-down: ## Удалить Kind-кластер
 	@echo "🛑 Удаление Kind-кластера mediapulse-cluster..."
