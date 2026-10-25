@@ -79,7 +79,7 @@ argocd-up: ## Применить корневой App-of-Apps (управляе�
 	@echo "▶ [4/6] Применение App-of-Apps (ArgoCD)..."
 	@echo "🔄 Применение корневого App-of-Apps..."
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
-	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
+	@$(MAKE) --no-print-directory wait-application-synced APP=root-app
 	@echo "✅ root-app применён. ArgoCD синхронизирует все дочерние Application."
 	@echo "   Ожидание готовности Vault, External Secrets и Image Updater..."
 	@$(MAKE) --no-print-directory wait-application APP=vault
