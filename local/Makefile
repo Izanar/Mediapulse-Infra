@@ -79,8 +79,11 @@ vault-init-env: ## Создать K8s Secret из .env до запуска Job v
 argocd-up: ## Применить корневой App-of-Apps (управляет всеми приложениями)
 	@echo ""
 	@echo "▶ [4/6] Применение App-of-Apps (ArgoCD)..."
+	@echo "🔄 Ожидание готовности Argo CD repo-server..."
+	@kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=180s
 	@echo "🔄 Применение корневого App-of-Apps..."
-	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml 2>&1 | grep -v "prefer a domain-qualified" || true
+	@kubectl -n argocd annotate application root-app argocd.argoproj.io/refresh=hard --overwrite >/dev/null 2>&1 || true
 	@$(MAKE) --no-print-directory wait-application-synced APP=root-app
 	@echo "✅ root-app применён. ArgoCD синхронизирует все дочерние Application."
 	@echo "   Ожидание готовности Vault, External Secrets и Image Updater (параллельно)..."
@@ -117,7 +120,7 @@ wait-application-synced:
 			echo "❌ Application $(APP) не синхронизировалось за $(ARGOCD_APP_TIMEOUT). Диагностика:"; \
 			kubectl -n argocd describe application $(APP); exit 1; \
 		fi; \
-		echo "   [$(APP)] sync=$${status:-NotFound} health=$${health:-Unknown}; повтор через $(ARGOCD_STATUS_INTERVAL)с"; \
+		if [ "$${status:-NotFound}" = "Unknown" ]; then echo "   [$(APP)] ожидание первой синхронизации Argo CD... повтор через $(ARGOCD_STATUS_INTERVAL)с"; else echo "   [$(APP)] sync=$${status:-NotFound} health=$${health:-Unknown}; повтор через $(ARGOCD_STATUS_INTERVAL)с"; fi; \
 		sleep $(ARGOCD_STATUS_INTERVAL); \
 	done
 
