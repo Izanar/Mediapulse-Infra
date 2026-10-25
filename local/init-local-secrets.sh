@@ -166,10 +166,37 @@ echo "⏳ Ожидание запуска Vault pod..."
 kubectl wait --for=jsonpath='{.status.phase}'=Running "pod/$POD_NAME" \
     -n "$NAMESPACE" --timeout=600s
 
-STATUS="$(kubectl exec "$POD_NAME" -n "$NAMESPACE" -- sh -c \
-    'VAULT_ADDR="http://127.0.0.1:8200" vault status -format=json' 2>/dev/null || true)"
-if [ -z "$STATUS" ]; then
-    echo "❌ Не удалось получить статус Vault." >&2
+echo "⏳ Ожидание ответа API Vault..."
+STATUS=
+STATUS_DEADLINE=$((SECONDS + 120))
+while (( SECONDS < STATUS_DEADLINE )); do
+    STATUS="$(kubectl exec "$POD_NAME" -n "$NAMESPACE" -- sh -c \
+        'VAULT_ADDR="http://127.0.0.1:8200" vault status -format=json' 2>/dev/null || true)"
+    if printf '%s' "$STATUS" | python3 -c '
+import json,sys
+try:
+    status=json.load(sys.stdin)
+    assert isinstance(status.get("initialized"), bool)
+    assert isinstance(status.get("sealed"), bool)
+except (json.JSONDecodeError, AssertionError):
+    sys.exit(1)
+'; then
+        break
+    fi
+    sleep 2
+done
+if ! printf '%s' "$STATUS" | python3 -c '
+import json,sys
+try:
+    status=json.load(sys.stdin)
+    assert isinstance(status.get("initialized"), bool)
+    assert isinstance(status.get("sealed"), bool)
+except (json.JSONDecodeError, AssertionError):
+    sys.exit(1)
+'; then
+    echo "❌ Vault API не вернул корректный статус за 120 секунд." >&2
+    kubectl get pod "$POD_NAME" -n "$NAMESPACE" -o wide >&2 || true
+    kubectl get events -n "$NAMESPACE" --sort-by=.lastTimestamp | tail -20 >&2 || true
     exit 1
 fi
 INITIALIZED="$(printf '%s' "$STATUS" | python3 -c \
