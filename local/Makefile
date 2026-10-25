@@ -1,7 +1,7 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-up vault-up secrets-init wait-application wait-application-synced dashboard-up cloudflare-tunnel-up all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-install argocd-up infra-up apps-up secrets-init wait-application wait-application-synced dashboard-up cloudflare-tunnel-up all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -10,12 +10,14 @@ help: ## Показать список доступных команд
 	@echo "  make cluster-down           - Удалить Kind-кластер"
 	@echo "  make cluster-status         - Проверить статус нод кластера"
 	@echo "  make helm-up                - Установить Helm CLI"
-	@echo "  make argocd-up              - Установить Argo CD и последовательно приложения"
+	@echo "  make argocd-install         - Установить только Argo CD (Helm)"
+	@echo "  make argocd-up              - Применить корневой App-of-Apps (управляет всеми приложениями)"
+	@echo "  make infra-up               - Дождаться готовности инфраструктуры (Traefik, Vault, ESO)"
+	@echo "  make apps-up                - Дождаться готовности приложений (Бэкенд, БД, Дашборд, Туннель)"
+	@echo "  make secrets-init           - Загрузить секреты из .env в Vault через Kubernetes Job"
 	@echo "  make dashboard-up           - Проверить маршруты и вывести данные доступа"
-	@echo "  make vault-up               - Установить HashiCorp Vault и External Secrets Operator"
-	@echo "  make secrets-init           - Заполнить локальные секреты в Vault скриптом"
 	@echo "  make cloudflare-tunnel-up   - Проверить Cloudflare Tunnel в Kubernetes"
-	@echo "  make all-up                 - Полный цикл: кластер -> приложения -> Cloudflare Tunnel"
+	@echo "  make all-up                 - Полный цикл: кластер -> ArgoCD -> инфраструктура -> секреты -> приложения"
 
 cluster-up: ## Создать Kind-кластер, если он ещё не существует
 	@if kind get clusters | grep -Fxq mediapulse-cluster; then \
@@ -50,57 +52,53 @@ helm-up: ## Установить Helm CLI, если его ещё нет
 		chmod 700 /tmp/get-helm-3 && /tmp/get-helm-3; \
 	fi
 
-argocd-up: ## Установить ArgoCD и применить корневой App-of-Apps
-	@echo "📦 Установка ArgoCD..."
+argocd-install: ## Установить только Argo CD (Helm)
+	@echo "📦 Установка Argo CD..."
 	@command -v helm >/dev/null 2>&1 || { echo "❌ Helm не найден. Выполни: make helm-up"; exit 1; }
 	@test -f $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml || { echo "❌ Не найден файл $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml"; exit 1; }
 	@kubectl get ns argocd >/dev/null 2>&1 || kubectl create namespace argocd
 	helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-helm --version 7.0.0 \
 		--namespace argocd --values $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml
-
 	@echo "⏳ Ожидание запуска ArgoCD API сервер..."
 	@kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 
-	@echo "🔄 Последовательная регистрация инфраструктурных приложений в Argo CD..."
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/traefik-app.yaml
+argocd-up: ## Применить корневой App-of-Apps (управляет всеми приложениями)
+	@echo "🔄 Применение корневого App-of-Apps..."
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
+	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
+	@echo "✅ root-app применён. ArgoCD синхронизирует все дочерние Application."
+
+infra-up: ## Дождаться готовности инфраструктуры (Traefik, Vault, External Secrets)
+	@echo "⏳ Ожидание готовности инфраструктурных приложений..."
 	@$(MAKE) wait-application APP=traefik
-	
-	# Добавляем установку Vault и ESO
-	@$(MAKE) vault-up
+	@$(MAKE) wait-application APP=vault
+	@$(MAKE) wait-application APP=external-secrets
 
-	# Создаём Kubernetes Secret до запуска PostgreSQL
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/secrets-app.yaml
-	@$(MAKE) wait-application APP=mediapulse-secrets
-	@kubectl -n default wait --for=condition=Ready externalsecrets.external-secrets.io/mediapulse-app-secrets --timeout=$(ARGOCD_APP_TIMEOUT)
-
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/databases-app.yaml
+apps-up: ## Дождаться готовности приложений (Бэкенд, БД, Дашборд, Туннель)
+	@echo "⏳ Ожидание готовности прикладных приложений..."
 	@$(MAKE) wait-application APP=mediapulse-databases
-
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/mediapulse-app.yaml
 	@$(MAKE) wait-application APP=mediapulse-app
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/kubernetes-dashboard-app.yaml
 	@$(MAKE) wait-application APP=kubernetes-dashboard
-
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/cloudflare-tunnel-app.yaml
-	@$(MAKE) wait-application-synced APP=cloudflare-tunnel
 	@$(MAKE) wait-application APP=cloudflare-tunnel
 
-	@echo "🔄 Передача управления Application-манифестами корневому App of Apps..."
-	kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
-	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
-
-vault-up: ## Установить HashiCorp Vault и External Secrets Operator через ArgoCD
-	@echo "🔒 Установка Vault и External Secrets Operator..."
-	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/external-secrets-app.yaml
-	@$(MAKE) wait-application APP=external-secrets
-	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/vault-app.yaml
-	@$(MAKE) wait-application-synced APP=vault
-	@$(MAKE) secrets-init
-	@$(MAKE) wait-application APP=vault
-
-secrets-init: ## Инициализировать секреты в Vault
-	@echo "🔐 Инициализация Vault и загрузка локальных секретов..."
-	bash ./init-local-secrets.sh
+secrets-init: ## Загрузить секреты из .env в Vault через Kubernetes Job
+	@test -f ../../Mediapulse-App/.env || { echo "❌ Файл .env не найден: ../../Mediapulse-App/.env"; exit 1; }
+	@echo "🔐 Создание Secret vault-init-env из .env..."
+	@kubectl create secret generic vault-init-env \
+		--namespace=default \
+		--from-env-file=../../Mediapulse-App/.env \
+		--dry-run=client -o=yaml | kubectl apply -f -
+	@echo "📦 Применение ArgoCD Application vault-init..."
+	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/vault-init-app.yaml
+	@echo "🔄 Перезапуск Job vault-init..."
+	@kubectl delete job vault-init --namespace=default --ignore-not-found
+	@echo "⏳ Ожидание завершения Job vault-init..."
+	@kubectl wait --namespace=default --for=condition=Complete job/vault-init --timeout=300s || { \
+		echo "❌ Job vault-init не завершён успешно. Логи:"; \
+		kubectl logs --namespace=default job/vault-init --tail=50; \
+		exit 1; \
+	}
+	@echo "✅ Секреты загружены в Vault"
 
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
@@ -111,6 +109,7 @@ wait-application:
 		kubectl -n argocd describe application $(APP); \
 		exit 1; \
 	}
+
 wait-application-synced:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application-synced APP=vault"; exit 1; }
 	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
@@ -129,6 +128,6 @@ cloudflare-tunnel-up: ## Проверить удалённо управляем�
 	@$(MAKE) wait-application-synced APP=cloudflare-tunnel
 	@bash ./cloudflare-tunnel-up.sh
 
-all-up: cluster-up helm-up argocd-up dashboard-up cloudflare-tunnel-up ## Полный идемпотентный цикл развертывания
+all-up: cluster-up helm-up argocd-install argocd-up infra-up secrets-init apps-up dashboard-up cloudflare-tunnel-up ## Полный идемпотентный цикл развертывания
 	@echo "🎉 Кластер, Argo CD, Vault и приложения успешно развернуты."
 	@echo "   Публичный HTTPS доступен через Cloudflare Tunnel."
