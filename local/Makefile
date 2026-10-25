@@ -1,7 +1,7 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-install argocd-up vault-secrets apps-up wait-application wait-application-synced all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up wait-application wait-application-synced all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -11,8 +11,9 @@ help: ## Показать список доступных команд
 	@echo "  make cluster-status         - Проверить статус нод кластера"
 	@echo "  make helm-up                - Установить Helm CLI"
 	@echo "  make argocd-install         - Установить только Argo CD (Helm)"
+	@echo "  make vault-init-env         - Создать K8s Secret из .env для первой инициализации Vault"
 	@echo "  make argocd-up              - Применить корневой App-of-Apps (управляет всеми приложениями)"
-	@echo "  make vault-secrets          - Создать K8s Secret из .env и дождаться инициализации Vault"
+	@echo "  make vault-secrets          - Дождаться инициализации Vault"
 	@echo "  make apps-up                - Дождаться готовности всех приложений (через ArgoCD)"
 	@echo "  make all-up                 - Полный цикл: кластер -> ArgoCD -> секреты -> приложения"
 
@@ -65,6 +66,15 @@ argocd-install: ## Установить только Argo CD (Helm)
 	@echo "⏳ Ожидание запуска ArgoCD API сервер..."
 	@kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 
+vault-init-env: ## Создать K8s Secret из .env до запуска Job vault-init
+	@test -f ../../Mediapulse-App/.env || { echo "❌ Файл .env не найден: ../../Mediapulse-App/.env"; exit 1; }
+	@echo "🔐 Создание Secret vault-init-env из .env..."
+	@kubectl create secret generic vault-init-env \
+		--namespace=default \
+		--from-env-file=../../Mediapulse-App/.env \
+		--dry-run=client -o=yaml | kubectl apply -f -
+	@echo "✅ Secret vault-init-env создан/обновлен"
+
 argocd-up: ## Применить корневой App-of-Apps (управляет всеми приложениями)
 	@echo ""
 	@echo "▶ [4/6] Применение App-of-Apps (ArgoCD)..."
@@ -95,16 +105,9 @@ wait-application-synced:
 		exit 1; \
 	}
 
-vault-secrets: ## Создать K8s Secret из .env и дождаться инициализации Vault
+vault-secrets: ## Дождаться инициализации Vault
 	@echo ""
 	@echo "▶ [5/6] Секреты и инициализация Vault..."
-	@test -f ../../Mediapulse-App/.env || { echo "❌ Файл .env не найден: ../../Mediapulse-App/.env"; exit 1; }
-	@echo "🔐 Создание Secret vault-init-env из .env..."
-	@kubectl create secret generic vault-init-env \
-		--namespace=default \
-		--from-env-file=../../Mediapulse-App/.env \
-		--dry-run=client -o=yaml | kubectl apply -f -
-	@echo "✅ Secret vault-init-env создан/обновлен"
 	@echo "🔄 Запуск синхронизации vault-init в ArgoCD..."
 	@kubectl -n argocd patch application vault-init --type merge --patch '{"spec":{"source":{"targetRevision":"HEAD"}}}' || true
 	@echo "⏳ Ожидание завершения Job vault-init (инициализация Vault)..."
@@ -123,7 +126,7 @@ apps-up: ## Дождаться готовности всех прикладны�
 	@$(MAKE) --no-print-directory wait-application APP=kubernetes-dashboard
 	@$(MAKE) --no-print-directory wait-application APP=cloudflare-tunnel
 
-all-up: cluster-up helm-up argocd-install argocd-up vault-secrets apps-up ## Полный цикл: кластер -> ArgoCD -> секреты -> приложения
+all-up: cluster-up helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up ## Полный цикл: кластер -> секреты -> ArgoCD -> приложения
 	@echo "🎉 Кластер, Argo CD и приложения успешно развернуты."
 	@echo "   Секреты загружены из .env в Vault, External Secrets Operator синхронизирует их в K8s."
 	@echo "   Публичный HTTPS доступен через Cloudflare Tunnel."
