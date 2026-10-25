@@ -58,7 +58,7 @@ make help
 Показывает список всех доступных команд.
 
 Также доступны `make cluster-up`, `make cluster-down`, `make cluster-status`,
-`make argocd-up`, `make dashboard-up` и `make cloudflare-tunnel-up`.
+`make argocd-up` и `make dashboard-up`.
 
 ### 🔑 Доступ к панелям управления
 
@@ -97,8 +97,8 @@ make help
    ```
 
 После этого `make all-up` запустит connector Pod `cloudflare/cloudflared` в
-кластере, а `make cloudflare-tunnel-up` можно использовать для повторной
-проверки и запуска. Публичные адреса:
+кластере, Повторная проверка туннеля выполняется через `make all-up` (шаг `public-check`).
+Публичные адреса:
 
 | Сервис | URL | Защита |
 | --- | --- | --- |
