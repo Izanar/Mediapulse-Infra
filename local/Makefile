@@ -17,6 +17,8 @@ help: ## Показать список доступных команд
 	@echo "  make all-up                 - Полный цикл: кластер -> ArgoCD -> секреты -> приложения"
 
 cluster-up: ## Создать Kind-кластер, если он ещё не существует
+	@echo ""
+	@echo "▶ [1/6] Создание Kind-кластера..."
 	@if kind get clusters | grep -Fxq mediapulse-cluster; then \
 		echo "✅ Кластер mediapulse-cluster уже существует; обновляю kubeconfig."; \
 		kind export kubeconfig --name mediapulse-cluster; \
@@ -41,6 +43,8 @@ cluster-status: ## Проверить статус нод Kubernetes
 	kubectl get nodes -o wide
 
 helm-up: ## Установить Helm CLI, если его ещё нет
+	@echo ""
+	@echo "▶ [2/6] Установка Helm CLI..."
 	@if command -v helm >/dev/null 2>&1; then \
 		echo "✅ Helm уже установлен: $$(helm version --short)"; \
 	else \
@@ -50,6 +54,8 @@ helm-up: ## Установить Helm CLI, если его ещё нет
 	fi
 
 argocd-install: ## Установить только Argo CD (Helm)
+	@echo ""
+	@echo "▶ [3/6] Установка Argo CD..."
 	@echo "📦 Установка Argo CD..."
 	@command -v helm >/dev/null 2>&1 || { echo "❌ Helm не найден. Выполни: make helm-up"; exit 1; }
 	@test -f $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml || { echo "❌ Не найден файл $(ARGOCD_REPO_PATH)/manifests/argocd/values.yaml"; exit 1; }
@@ -60,19 +66,21 @@ argocd-install: ## Установить только Argo CD (Helm)
 	@kubectl -n argocd rollout status deploy/argocd-server --timeout=180s
 
 argocd-up: ## Применить корневой App-of-Apps (управляет всеми приложениями)
+	@echo ""
+	@echo "▶ [4/6] Применение App-of-Apps (ArgoCD)..."
 	@echo "🔄 Применение корневого App-of-Apps..."
 	@kubectl apply -f $(ARGOCD_REPO_PATH)/argocd/root.yaml
 	@kubectl -n argocd wait --for=jsonpath='{.status.sync.status}'=Synced application/root-app --timeout=300s
 	@echo "✅ root-app применён. ArgoCD синхронизирует все дочерние Application."
 	@echo "   Ожидание готовности Vault, External Secrets и Image Updater..."
-	@$(MAKE) wait-application APP=vault
-	@$(MAKE) wait-application APP=external-secrets
-	@$(MAKE) wait-application APP=argocd-image-updater
+	@$(MAKE) --no-print-directory wait-application APP=vault
+	@$(MAKE) --no-print-directory wait-application APP=external-secrets
+	@$(MAKE) --no-print-directory wait-application APP=argocd-image-updater
 
 wait-application:
 	@test -n "$(APP)" || { echo "❌ Укажите APP, например: make wait-application APP=traefik"; exit 1; }
-	@echo "⏳ Ожидание синхронизации и готовности Application $(APP)..."
-	@$(MAKE) wait-application-synced APP=$(APP)
+	@echo "⏳ [$(APP)] Ожидание синхронизации и готовности..."
+	@$(MAKE) --no-print-directory wait-application-synced APP=$(APP)
 	@kubectl -n argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/$(APP) --timeout=$(ARGOCD_APP_TIMEOUT) || { \
 		echo "❌ Application $(APP) не стало Healthy. Диагностика:"; \
 		kubectl -n argocd describe application $(APP); \
@@ -88,6 +96,8 @@ wait-application-synced:
 	}
 
 vault-secrets: ## Создать K8s Secret из .env и дождаться инициализации Vault
+	@echo ""
+	@echo "▶ [5/6] Секреты и инициализация Vault..."
 	@test -f ../../Mediapulse-App/.env || { echo "❌ Файл .env не найден: ../../Mediapulse-App/.env"; exit 1; }
 	@echo "🔐 Создание Secret vault-init-env из .env..."
 	@kubectl create secret generic vault-init-env \
@@ -106,10 +116,12 @@ vault-secrets: ## Создать K8s Secret из .env и дождаться ин
 	@echo "✅ Vault инициализирован"
 
 apps-up: ## Дождаться готовности всех прикладных приложений (через ArgoCD)
-	@$(MAKE) wait-application APP=mediapulse-databases
-	@$(MAKE) wait-application APP=mediapulse-app
-	@$(MAKE) wait-application APP=kubernetes-dashboard
-	@$(MAKE) wait-application APP=cloudflare-tunnel
+	@echo ""
+	@echo "▶ [6/6] Ожидание готовности приложений..."
+	@$(MAKE) --no-print-directory wait-application APP=mediapulse-databases
+	@$(MAKE) --no-print-directory wait-application APP=mediapulse-app
+	@$(MAKE) --no-print-directory wait-application APP=kubernetes-dashboard
+	@$(MAKE) --no-print-directory wait-application APP=cloudflare-tunnel
 
 all-up: cluster-up helm-up argocd-install argocd-up vault-secrets apps-up ## Полный цикл: кластер -> ArgoCD -> секреты -> приложения
 	@echo "🎉 Кластер, Argo CD и приложения успешно развернуты."
