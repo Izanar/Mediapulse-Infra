@@ -4,7 +4,7 @@ ARGOCD_STATUS_INTERVAL ?= 5
 PUBLIC_URL ?= https://mediapulse.izanar.dev/
 PUBLIC_CHECK_TIMEOUT ?= 180
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up public-check wait-application wait-application-synced all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up public-check dashboard-up cloudflare-tunnel-up wait-application wait-application-synced all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -151,6 +151,12 @@ apps-up: ## Дождаться готовности всех прикладны�
 	$(MAKE) --no-print-directory wait-application APP=cloudflare-tunnel & tunnel_pid=$$!; \
 	wait $$db_pid; wait $$app_pid; wait $$dash_pid; wait $$tunnel_pid
 
+dashboard-up: ## Показать данные доступа и состояние ArgoCD
+	@bash ./dev-dashboard.sh
+
+cloudflare-tunnel-up: ## Проверить и дождаться готовности Cloudflare Tunnel
+	@bash ./cloudflare-tunnel-up.sh
+
 public-check: ## Проверить доступность приложения через публичный HTTPS
 	@echo "🌐 Проверка публичного HTTPS: $(PUBLIC_URL)"
 	@deadline=$$(( $$(date +%s) + $(PUBLIC_CHECK_TIMEOUT) )); \
@@ -164,7 +170,7 @@ public-check: ## Проверить доступность приложения 
 	done
 	@echo "✅ Публичный HTTPS доступен: $(PUBLIC_URL)"
 
-all-up: cluster-up helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up public-check ## Полный цикл: кластер -> секреты -> ArgoCD -> приложения -> публичный HTTPS
+all-up: cluster-up helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up cloudflare-tunnel-up public-check dashboard-up ## Полный цикл: кластер -> секреты -> ArgoCD -> приложения -> публичный HTTPS
 	@echo "🎉 Кластер, Argo CD и приложения успешно развернуты."
 	@echo "   Секреты загружены из .env в Vault, External Secrets Operator синхронизирует их в K8s."
 	@echo "   Публичный HTTPS доступен через Cloudflare Tunnel."
