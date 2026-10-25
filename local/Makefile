@@ -1,7 +1,9 @@
 ARGOCD_REPO_PATH ?= ../../Mediapulse-Gitops/local
 ARGOCD_APP_TIMEOUT ?= 600s
+PUBLIC_URL ?= https://mediapulse.izanar.dev/
+PUBLIC_CHECK_TIMEOUT ?= 180
 
-.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up wait-application wait-application-synced all-up
+.PHONY: help cluster-up cluster-down cluster-status helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up public-check wait-application wait-application-synced all-up
 .NOTPARALLEL: all-up
 
 help: ## Показать список доступных команд
@@ -11,11 +13,8 @@ help: ## Показать список доступных команд
 	@echo "  make cluster-status         - Проверить статус нод кластера"
 	@echo "  make helm-up                - Установить Helm CLI"
 	@echo "  make argocd-install         - Установить только Argo CD (Helm)"
-	@echo "  make vault-init-env         - Создать K8s Secret из .env для первой инициализации Vault"
 	@echo "  make argocd-up              - Применить корневой App-of-Apps (управляет всеми приложениями)"
-	@echo "  make vault-secrets          - Дождаться инициализации Vault"
-	@echo "  make apps-up                - Дождаться готовности всех приложений (через ArgoCD)"
-	@echo "  make all-up                 - Полный цикл: кластер -> ArgoCD -> секреты -> приложения"
+	@echo "  make all-up                 - Полный цикл с проверкой публичного HTTPS"
 
 cluster-up: ## Создать Kind-кластер, если он ещё не существует
 	@echo ""
@@ -126,7 +125,20 @@ apps-up: ## Дождаться готовности всех прикладны�
 	@$(MAKE) --no-print-directory wait-application APP=kubernetes-dashboard
 	@$(MAKE) --no-print-directory wait-application APP=cloudflare-tunnel
 
-all-up: cluster-up helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up ## Полный цикл: кластер -> секреты -> ArgoCD -> приложения
+public-check: ## Проверить доступность приложения через публичный HTTPS
+	@echo "🌐 Проверка публичного HTTPS: $(PUBLIC_URL)"
+	@deadline=$$(( $$(date +%s) + $(PUBLIC_CHECK_TIMEOUT) )); \
+	until curl --fail --silent --show-error --location --max-time 15 --output /dev/null "$(PUBLIC_URL)"; do \
+		if [ $$(date +%s) -ge $$deadline ]; then \
+			echo "❌ $(PUBLIC_URL) недоступен после $(PUBLIC_CHECK_TIMEOUT)."; \
+			exit 1; \
+		fi; \
+		echo "⏳ Публичный маршрут ещё не готов; повтор через 5 секунд..."; \
+		sleep 5; \
+	done
+	@echo "✅ Публичный HTTPS доступен: $(PUBLIC_URL)"
+
+all-up: cluster-up helm-up argocd-install vault-init-env argocd-up vault-secrets apps-up public-check ## Полный цикл: кластер -> секреты -> ArgoCD -> приложения -> публичный HTTPS
 	@echo "🎉 Кластер, Argo CD и приложения успешно развернуты."
 	@echo "   Секреты загружены из .env в Vault, External Secrets Operator синхронизирует их в K8s."
 	@echo "   Публичный HTTPS доступен через Cloudflare Tunnel."
