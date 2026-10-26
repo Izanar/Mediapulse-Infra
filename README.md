@@ -117,8 +117,6 @@ Cloudflare Tunnel маршрутизирует origin на внутренний 
 Cloudflare Tunnel. Поэтому эта схема шифрует публичный участок до Cloudflare,
 но не обеспечивает сквозной HTTPS внутри кластера.
 
-
-
 📁 Структура репозитория
 Plaintext
 mediapulse-infra/
