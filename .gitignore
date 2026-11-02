@@ -1,0 +1,16 @@
+# Локальные файлы и кэш Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+*.auto.tfvars
+!example.tfvars
+
+# Локальный кэш и временные файлы Terragrunt
+.terragrunt-cache
+*.hcl.lock  # При желании lock-файлы (.terraform.lock.hcl) можно коммитить, чтобы фиксировать версии провайдеров, либо тоже исключать
+
+# Файлы авторизации и секреты
+credentials.json
+key.json
