@@ -3,7 +3,7 @@ remote_state {
   config = {
     bucket   = "mediapulse-tf-state-mediapulse-513322" 
     prefix   = "${path_relative_to_include()}/terraform.tfstate"
-    project  = "mediapulse-513322" # ID твоего проекта в GCP
+    project  = "mediapulse-513322"
     location = "europe-west1"
   }
   generate = {
